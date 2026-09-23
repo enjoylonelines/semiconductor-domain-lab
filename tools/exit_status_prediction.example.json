@@ -1,0 +1,33 @@
+{
+  "recorded_at": "",
+  "problem": "",
+  "constraint": "",
+  "invariant": "",
+  "acceptance": "",
+  "failure": "",
+  "decision": "",
+  "decision_reason": "",
+  "predictions": {
+    "nonzero_negative": {
+      "parse_status": "",
+      "check_status": "",
+      "run_status": "",
+      "attempt_status": "",
+      "reason": ""
+    },
+    "nonzero_missing": {
+      "parse_status": "",
+      "check_status": "",
+      "run_status": "",
+      "attempt_status": "",
+      "reason": ""
+    },
+    "zero_positive": {
+      "parse_status": "",
+      "check_status": "",
+      "run_status": "",
+      "attempt_status": "",
+      "reason": ""
+    }
+  }
+}
