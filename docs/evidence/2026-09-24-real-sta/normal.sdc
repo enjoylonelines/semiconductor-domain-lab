@@ -1,0 +1,7 @@
+create_clock -name clk -period 10 [get_ports clk]
+set_input_delay -max 0.1 -clock clk [get_ports {a b}]
+set_input_delay -min 0.0 -clock clk [get_ports {a b}]
+set_output_delay -max 0.1 -clock clk [get_ports y]
+set_output_delay -min 0.0 -clock clk [get_ports y]
+set_input_transition 0.05 [get_ports {a b}]
+set_load 0.01 [get_ports y]

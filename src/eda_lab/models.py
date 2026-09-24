@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 @dataclass(frozen=True)
@@ -20,3 +21,11 @@ class ParseResult:
     errors: list[str]
     completeness: str = "unknown"
     provenance: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class AdapterRunResult:
+    """Adapter-observed execution outcome and its emitted artifact."""
+
+    artifact_path: Path
+    process_exit_code: int | None

@@ -1,0 +1,118 @@
+{
+  "normal": {
+    "manual_oracle": {
+      "required_ns": 9.883325,
+      "arrival_ns": 0.423375,
+      "slack_ns": 9.459949,
+      "arithmetic_tolerance_ns": 2e-06
+    },
+    "parse_result": {
+      "parse_status": "INVALID",
+      "check_status": "UNKNOWN",
+      "metrics": {},
+      "errors": [
+        "missing synthetic marker",
+        "missing field fixture_format_version",
+        "missing field run_id",
+        "missing field stage",
+        "missing field corner",
+        "missing field tool_exit_code",
+        "missing field worst_slack"
+      ],
+      "completeness": "incomplete",
+      "provenance": {
+        "source_kind": "synthetic",
+        "source_sha256": "05c825e5700e6414c9239010facb89acb159ed49849fb951061825584cd00c3e",
+        "parser": "eda_lab.parser:v1",
+        "artifact_kind": "timing_report"
+      }
+    },
+    "stored_run": {
+      "job_id": "normal",
+      "design_id": "tiny",
+      "ip_family": "research",
+      "flow_name": "sta_setup",
+      "status": "FAILED",
+      "parse_status": "INVALID",
+      "check_status": "UNKNOWN",
+      "completeness": "incomplete",
+      "provenance": {
+        "artifact_kind": "timing_report",
+        "parser": "eda_lab.parser:v1",
+        "source_kind": "synthetic",
+        "source_sha256": "05c825e5700e6414c9239010facb89acb159ed49849fb951061825584cd00c3e"
+      },
+      "artifact_path": "/Users/hb/Projects/semiconductor-domain-lab/docs/evidence/2026-09-24-real-sta/normal.log",
+      "error": "missing synthetic marker; missing field fixture_format_version; missing field run_id; missing field stage; missing field corner; missing field tool_exit_code; missing field worst_slack",
+      "metrics": null,
+      "attempts": [
+        {
+          "job_id": "normal",
+          "attempt_no": 1,
+          "status": "FAILED",
+          "error_type": "parse_invalid",
+          "error": "missing synthetic marker; missing field fixture_format_version; missing field run_id; missing field stage; missing field corner; missing field tool_exit_code; missing field worst_slack",
+          "artifact_path": "/Users/hb/Projects/semiconductor-domain-lab/docs/evidence/2026-09-24-real-sta/normal.log"
+        }
+      ]
+    }
+  },
+  "tight": {
+    "manual_oracle": {
+      "required_ns": -0.016675,
+      "arrival_ns": 0.423375,
+      "slack_ns": -0.44005,
+      "arithmetic_tolerance_ns": 2e-06
+    },
+    "parse_result": {
+      "parse_status": "INVALID",
+      "check_status": "UNKNOWN",
+      "metrics": {},
+      "errors": [
+        "missing synthetic marker",
+        "missing field fixture_format_version",
+        "missing field run_id",
+        "missing field stage",
+        "missing field corner",
+        "missing field tool_exit_code",
+        "missing field worst_slack"
+      ],
+      "completeness": "incomplete",
+      "provenance": {
+        "source_kind": "synthetic",
+        "source_sha256": "212c533cd86eb1c9bc8ca72ab44a713ce413dff3157a01344193ad4267db9614",
+        "parser": "eda_lab.parser:v1",
+        "artifact_kind": "timing_report"
+      }
+    },
+    "stored_run": {
+      "job_id": "tight",
+      "design_id": "tiny",
+      "ip_family": "research",
+      "flow_name": "sta_setup",
+      "status": "FAILED",
+      "parse_status": "INVALID",
+      "check_status": "UNKNOWN",
+      "completeness": "incomplete",
+      "provenance": {
+        "artifact_kind": "timing_report",
+        "parser": "eda_lab.parser:v1",
+        "source_kind": "synthetic",
+        "source_sha256": "212c533cd86eb1c9bc8ca72ab44a713ce413dff3157a01344193ad4267db9614"
+      },
+      "artifact_path": "/Users/hb/Projects/semiconductor-domain-lab/docs/evidence/2026-09-24-real-sta/tight.log",
+      "error": "missing synthetic marker; missing field fixture_format_version; missing field run_id; missing field stage; missing field corner; missing field tool_exit_code; missing field worst_slack",
+      "metrics": null,
+      "attempts": [
+        {
+          "job_id": "tight",
+          "attempt_no": 1,
+          "status": "FAILED",
+          "error_type": "parse_invalid",
+          "error": "missing synthetic marker; missing field fixture_format_version; missing field run_id; missing field stage; missing field corner; missing field tool_exit_code; missing field worst_slack",
+          "artifact_path": "/Users/hb/Projects/semiconductor-domain-lab/docs/evidence/2026-09-24-real-sta/tight.log"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+read_liberty -lib /tmp/eda-opensta-20260924/examples/sky130hd_tt.lib
+read_verilog -sv tiny.sv
+synth -top tiny
+dfflibmap -liberty /tmp/eda-opensta-20260924/examples/sky130hd_tt.lib
+abc -liberty /tmp/eda-opensta-20260924/examples/sky130hd_tt.lib
+clean
+check -assert
+stat
+write_verilog -noattr -noexpr tiny_mapped.v

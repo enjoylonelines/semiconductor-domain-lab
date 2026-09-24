@@ -1,0 +1,43 @@
+OpenSTA 3.1.0 396536743f Copyright (c) 2026, Parallax Software, Inc.
+License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>
+
+This is free software, and you are free to change and redistribute it
+under certain conditions; type `show_copying' for details. 
+This program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.
+ time 1ns
+ capacitance 1pF
+ resistance 1kohm
+ voltage 1v
+ current 1mA
+ power 1nW
+ distance 1um
+Startpoint: _3_ (rising edge-triggered flip-flop clocked by clk)
+Endpoint: _2_ (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+
+      Delay        Time   Description
+-----------------------------------------------------------------
+   0.000000    0.000000   clock clk (rise edge)
+   0.000000    0.000000   clock network delay (ideal)
+   0.000000    0.000000 ^ _3_/CLK (sky130_fd_sc_hd__dfxtp_1)
+   0.281003    0.281003 v _3_/Q (sky130_fd_sc_hd__dfxtp_1)
+   0.142373    0.423375 v _1_/X (sky130_fd_sc_hd__xor2_1)
+   0.000000    0.423375 v _2_/D (sky130_fd_sc_hd__dfxtp_1)
+               0.423375   data arrival time
+
+  10.000000   10.000000   clock clk (rise edge)
+   0.000000   10.000000   clock network delay (ideal)
+   0.000000   10.000000   clock reconvergence pessimism
+              10.000000 ^ _2_/CLK (sky130_fd_sc_hd__dfxtp_1)
+  -0.116675    9.883325   library setup time
+               9.883325   data required time
+-----------------------------------------------------------------
+               9.883325   data required time
+              -0.423375   data arrival time
+-----------------------------------------------------------------
+               9.459949   slack (MET)
+
+
+worst slack max 9.459949
+EDA_LAB_REPORT_END

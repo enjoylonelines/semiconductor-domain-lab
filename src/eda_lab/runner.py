@@ -1,7 +1,7 @@
 import tempfile
 import time
 from pathlib import Path
-from .models import JobSpec
+from .models import AdapterRunResult, JobSpec
 
 
 class SyntheticTimingAdapter:
@@ -11,7 +11,7 @@ class SyntheticTimingAdapter:
         self.profile = profile
         self.artifact_bytes = artifact_bytes
 
-    def run(self, spec: JobSpec) -> Path:
+    def run(self, spec: JobSpec) -> AdapterRunResult:
         if self.profile == "timeout":
             time.sleep(max(spec.duration_seconds, 0.01))
             raise TimeoutError("synthetic adapter timeout")
@@ -41,4 +41,4 @@ class SyntheticTimingAdapter:
         if self.artifact_bytes > len(payload):
             payload += "# synthetic artifact padding\n" + "x" * (self.artifact_bytes - len(payload))
         report.write_text(payload, encoding="utf-8")
-        return report
+        return AdapterRunResult(report, process_exit_code=0)

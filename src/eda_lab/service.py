@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore, Lock
 import time
-from .models import JobSpec
+from .models import AdapterRunResult, JobSpec
 from .parser import parse_report
 from .runner import SyntheticTimingAdapter
 from .store import Store
@@ -44,11 +44,32 @@ class JobService:
                 if self.resource_slots:
                     self.resource_slots.acquire()
                     acquired = True
-                artifact = self.adapter.run(spec)
+                adapter_result = self.adapter.run(spec)
+                if isinstance(adapter_result, AdapterRunResult):
+                    artifact = adapter_result.artifact_path
+                    process_exit_code = adapter_result.process_exit_code
+                else:
+                    # Temporary diagnostic bridge: a bare path cannot prove execution success.
+                    artifact = adapter_result
+                    process_exit_code = None
                 result = parse_report(artifact)
                 if result.parse_status == "INVALID":
                     self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact))
                     self.store.update_run(spec.job_id, status="FAILED", parse_status="INVALID", check_status="UNKNOWN", completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error="; ".join(result.errors))
+                    return
+                if process_exit_code is None:
+                    error = "execution_outcome_unknown: adapter returned artifact without process exit code"
+                    self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="execution_outcome_unknown", error=error, artifact_path=str(artifact))
+                    self.store.update_run(spec.job_id, status="FAILED", parse_status=result.parse_status, check_status=result.check_status, completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error=error)
+                    if result.metrics:
+                        self.store.save_metrics(spec.job_id, result.metrics)
+                    return
+                if process_exit_code != 0:
+                    error = f"tool_exit: exit code {process_exit_code}"
+                    self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="tool_exit", error=error, artifact_path=str(artifact))
+                    self.store.update_run(spec.job_id, status="FAILED", parse_status=result.parse_status, check_status=result.check_status, completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error=error)
+                    if result.metrics:
+                        self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 self.store.record_attempt(spec.job_id, attempt_no, "SUCCEEDED", artifact_path=str(artifact))
                 self.store.update_run(spec.job_id, status="SUCCEEDED", parse_status=result.parse_status, check_status=result.check_status, completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error=None)
