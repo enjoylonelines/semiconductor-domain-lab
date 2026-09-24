@@ -57,6 +57,27 @@ Result(결과): 35 tests(테스트) passed(통과) in `0.564s`. Python emitted e
 
 `git diff --check` passed(통과).
 
+## Lease(임대) and heartbeat(심장박동) reinforcement(보강)
+
+Each Attempt(실행 시도) now persists `lease_owner(임대 소유자)`, opaque `lease_token(임대 토큰)`, `lease_expires_at(임대 만료 시각)`, and `heartbeat_at(심장박동 시각)`. Acquisition(획득) is conditional on a `RUNNING` attempt(실행 중 실행 시도) with no live lease(유효 임대); heartbeat(심장박동) is conditional on the original token(원래 토큰) and an unexpired lease(만료되지 않은 임대). A competing worker(경쟁 작업자) cannot extend another worker's lease(다른 작업자의 임대).
+
+Focused fault-injection tests(집중 장애 주입 테스트) establish that a wrong token(잘못된 토큰) is rejected, a valid token(유효 토큰) extends expiry(만료), and an expired leased attempt(만료된 임대 실행 시도) is returned as a reconciliation candidate(조정 후보), never as success(성공). `JobService` acquires a new opaque token(새 불투명 토큰) before adapter execution(어댑터 실행) and verifies a heartbeat(심장박동) before result collection(결과 수집).
+
+The full suite(전체 묶음) now has 40 passing tests(통과 테스트). This does not prove restart-safe fencing(재시작 안전 차단), periodic heartbeat(주기적 심장박동) during a long-running child process(장시간 하위 프로세스), multi-host ownership(다중 호스트 소유권), or automatic retry(자동 재시도) for an abandoned attempt(포기된 실행 시도).
+
+## Bounded concurrency probe(제한된 동시성 탐침)
+
+The fixed normal OpenSTA workload(고정 정상 OpenSTA 작업부하) was run once at each concurrent child count(동시 하위 프로세스 수). All runs exited `0`; the process intervals(프로세스 구간) overlapped for the multi-child cases(다중 하위 프로세스 경우).
+
+| concurrent children(동시 하위 프로세스) | elapsed seconds(경과 초) |
+| --- | --- |
+| 1 | `0.226274` |
+| 2 | `0.231440` |
+| 4 | `0.240020` |
+| 8 | `0.271491` |
+
+This single-run probe(단일 실행 탐침) shows no timeout(시간 초과) or nonzero exit(0이 아닌 종료) at these counts on this host(호스트). It does not measure CPU(중앙 처리 장치), memory(메모리), queue wait(대기열 대기), license pressure(라이선스 압박), sustained throughput(지속 처리량), or a saturation point(포화 지점); it is not a concurrency limit(동시성 한도) recommendation.
+
 ## Test Scope Review(테스트 범위 검토)
 
 | test type(테스트 종류) | coverage(범위) | result(결과) |

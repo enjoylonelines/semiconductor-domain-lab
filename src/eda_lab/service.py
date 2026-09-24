@@ -1,6 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore, Lock
 import time
+from uuid import uuid4
 from .models import AdapterRunResult, JobSpec
 from .parser import parse_report
 from .runner import SyntheticTimingAdapter
@@ -8,12 +9,14 @@ from .store import Store
 
 
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
         self.retry_delay_seconds = retry_delay_seconds
         self.resource_slots = BoundedSemaphore(resource_slots) if resource_slots else None
+        self.worker_id = worker_id
+        self.lease_seconds = lease_seconds
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.lock = Lock()
         self.futures = {}
@@ -67,14 +70,20 @@ class JobService:
         self.store.update_run(spec.job_id, status="RUNNING")
         for attempt_no in range(1, self.max_attempts + 1):
             acquired = False
+            lease_token = None
             try:
                 # Persist this boundary before adapter execution. An interruption after an
                 # artifact is emitted can then be reconciled without inventing success.
                 self.store.record_attempt(spec.job_id, attempt_no, "RUNNING", retry_class="not_classified")
+                lease_token = uuid4().hex
+                if not self.store.acquire_attempt_lease(spec.job_id, attempt_no, self.worker_id, lease_token, self.lease_seconds):
+                    raise RuntimeError("attempt lease acquisition failed")
                 if self.resource_slots:
                     self.resource_slots.acquire()
                     acquired = True
                 adapter_result = self.adapter.run(spec)
+                if not self.store.heartbeat_attempt(spec.job_id, attempt_no, lease_token, self.lease_seconds):
+                    raise RuntimeError("attempt lease was lost before result collection")
                 if isinstance(adapter_result, AdapterRunResult):
                     artifact = adapter_result.artifact_path
                     process_exit_code = adapter_result.process_exit_code

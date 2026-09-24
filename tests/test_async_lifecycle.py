@@ -40,6 +40,31 @@ class BlockingAdapter:
 
 
 class AsyncLifecycleTests(unittest.TestCase):
+    def test_attempt_lease_uses_a_token_and_heartbeat_cannot_be_stolen(self):
+        clock = [100.0]
+        store = Store(now=lambda: clock[0])
+        store.create_run("leased", "design-a", "PCIe", "synthetic-timing")
+        store.record_attempt("leased", 1, "RUNNING", retry_class="not_classified")
+
+        self.assertTrue(store.acquire_attempt_lease("leased", 1, "worker-a", "token-a", 10))
+        self.assertFalse(store.heartbeat_attempt("leased", 1, "token-b", 10))
+        clock[0] = 105.0
+        self.assertTrue(store.heartbeat_attempt("leased", 1, "token-a", 10))
+        attempt = store.get_run("leased")["attempts"][-1]
+        self.assertEqual(attempt["lease_owner"], "worker-a")
+        self.assertEqual(attempt["lease_token"], "token-a")
+        self.assertEqual(attempt["heartbeat_at"], 105.0)
+        self.assertEqual(attempt["lease_expires_at"], 115.0)
+
+    def test_expired_lease_is_a_reconciliation_candidate_not_success(self):
+        clock = [100.0]
+        store = Store(now=lambda: clock[0])
+        store.create_run("expired-lease", "design-a", "PCIe", "synthetic-timing")
+        store.record_attempt("expired-lease", 1, "RUNNING", retry_class="not_classified")
+        store.acquire_attempt_lease("expired-lease", 1, "worker-a", "token-a", 1)
+        clock[0] = 102.0
+
+        self.assertEqual(store.list_expired_leased_attempts(clock[0]), [("expired-lease", 1)])
     def test_retryable_timeout_keeps_numbered_history_then_succeeds(self):
         service = JobService(Store(), max_workers=1, max_attempts=2, retry_delay_seconds=0, adapter=SequenceAdapter())
         service.submit(spec("retry-then-success"))
@@ -51,6 +76,7 @@ class AsyncLifecycleTests(unittest.TestCase):
             (1, "RETRYABLE_FAILURE", "retryable"),
             (2, "SUCCEEDED", "not_applicable"),
         ])
+        self.assertTrue(all(item["lease_token"] for item in result["attempts"]))
 
     def test_non_retryable_tool_exit_stops_at_first_attempt(self):
         successful = SyntheticTimingAdapter()

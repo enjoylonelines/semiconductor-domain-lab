@@ -30,6 +30,7 @@ class Store:
           job_id TEXT NOT NULL REFERENCES runs(job_id), attempt_no INTEGER NOT NULL,
           status TEXT NOT NULL, error_type TEXT, error TEXT, artifact_path TEXT,
           retry_class TEXT, started_at REAL NOT NULL DEFAULT 0, updated_at REAL NOT NULL DEFAULT 0,
+          lease_owner TEXT, lease_token TEXT, lease_expires_at REAL, heartbeat_at REAL,
           PRIMARY KEY(job_id, attempt_no)
         );
         CREATE TABLE IF NOT EXISTS metric_rows (
@@ -57,6 +58,10 @@ class Store:
         self._add_column_if_missing("attempts", "retry_class", "TEXT")
         self._add_column_if_missing("attempts", "started_at", "REAL NOT NULL DEFAULT 0")
         self._add_column_if_missing("attempts", "updated_at", "REAL NOT NULL DEFAULT 0")
+        self._add_column_if_missing("attempts", "lease_owner", "TEXT")
+        self._add_column_if_missing("attempts", "lease_token", "TEXT")
+        self._add_column_if_missing("attempts", "lease_expires_at", "REAL")
+        self._add_column_if_missing("attempts", "heartbeat_at", "REAL")
         self.connection.commit()
 
     def _add_column_if_missing(self, table: str, column: str, definition: str) -> None:
@@ -146,6 +151,37 @@ class Store:
                 "SELECT job_id FROM runs WHERE status = 'RUNNING' AND updated_at <= ?", (cutoff,)
             ).fetchall()]
         return [run for job_id in job_ids if (run := self.get_run(job_id)) is not None]
+
+    def acquire_attempt_lease(self, job_id: str, attempt_no: int, owner: str, token: str, ttl_seconds: float) -> bool:
+        now = self._now()
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE attempts SET lease_owner = ?, lease_token = ?, heartbeat_at = ?, lease_expires_at = ?, updated_at = ? "
+                "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' "
+                "AND (lease_expires_at IS NULL OR lease_expires_at < ?)",
+                (owner, token, now, now + ttl_seconds, now, job_id, attempt_no, now),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def heartbeat_attempt(self, job_id: str, attempt_no: int, token: str, ttl_seconds: float) -> bool:
+        now = self._now()
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE attempts SET heartbeat_at = ?, lease_expires_at = ?, updated_at = ? "
+                "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_token = ? AND lease_expires_at >= ?",
+                (now, now + ttl_seconds, now, job_id, attempt_no, token, now),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def list_expired_leased_attempts(self, now: float | None = None) -> list[tuple[str, int]]:
+        cutoff = self._now() if now is None else now
+        with self._lock:
+            return [tuple(row) for row in self.connection.execute(
+                "SELECT job_id, attempt_no FROM attempts WHERE status = 'RUNNING' AND lease_token IS NOT NULL "
+                "AND lease_expires_at < ? ORDER BY job_id, attempt_no", (cutoff,)
+            ).fetchall()]
 
     def create_revision(self, revision_id: str, design_id: str, source_revision: str, liberty_hash: str,
                         sdc_hash: str, tool_version: str, parser_version: str) -> None:
