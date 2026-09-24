@@ -8,8 +8,12 @@ from .runner import AdapterCancelledError, SyntheticTimingAdapter
 from .store import Store
 
 
+class BackpressureError(RuntimeError):
+    """The configured in-flight execution budget is exhausted."""
+
+
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
@@ -17,6 +21,7 @@ class JobService:
         self.resource_slots = BoundedSemaphore(resource_slots) if resource_slots else None
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
+        self.max_in_flight = max_in_flight
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.lock = Lock()
         self.futures = {}
@@ -53,6 +58,10 @@ class JobService:
             existing = self.store.get_run(spec.job_id)
             if existing:
                 return existing
+            if self.max_in_flight is not None:
+                in_flight = sum(not future.done() for future in self.futures.values())
+                if in_flight >= self.max_in_flight:
+                    raise BackpressureError(f"in-flight execution budget exhausted: {self.max_in_flight}")
             self.store.create_run(spec.job_id, spec.design_id, spec.ip_family, spec.flow_name)
             future = self.executor.submit(self._execute, spec)
             self.futures[spec.job_id] = future

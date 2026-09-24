@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from eda_lab.models import AdapterRunResult, JobSpec
 from eda_lab.runner import OpenStaSubprocessAdapter, SyntheticTimingAdapter
-from eda_lab.service import JobService
+from eda_lab.service import BackpressureError, JobService
 from eda_lab.store import Store
 
 
@@ -136,6 +136,17 @@ class AsyncLifecycleTests(unittest.TestCase):
         adapter.release.set()
         service.futures["live-worker"].result(timeout=2)
         self.assertEqual(service.get("live-worker")["status"], "SUCCEEDED")
+
+    def test_in_flight_budget_applies_backpressure_before_creating_another_run(self):
+        adapter = BlockingAdapter()
+        service = JobService(Store(), max_workers=1, max_attempts=1, adapter=adapter, max_in_flight=1)
+        service.submit(spec("budget-first"))
+        self.assertTrue(adapter.started.wait(timeout=1))
+        with self.assertRaises(BackpressureError):
+            service.submit(spec("budget-rejected"))
+        self.assertIsNone(service.get("budget-rejected"))
+        adapter.release.set()
+        service.futures["budget-first"].result(timeout=2)
 
 
 class OpenStaSubprocessAdapterTests(unittest.TestCase):
