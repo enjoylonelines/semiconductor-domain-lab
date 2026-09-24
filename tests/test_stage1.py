@@ -21,6 +21,9 @@ class Stage1Tests(unittest.TestCase):
             self.assertEqual(result.parse_status, "OK")
             self.assertEqual(streamed.metrics["source_sha256"], result.metrics["source_sha256"])
             self.assertEqual(result.check_status, "FAIL")
+            self.assertEqual(result.completeness, "complete")
+            self.assertEqual(result.provenance["source_kind"], "synthetic")
+            self.assertEqual(result.provenance["source_sha256"], result.metrics["source_sha256"])
             self.assertEqual(result.metrics["worst_slack_ns"], -0.08)
 
     def test_fixture_profiles_cover_missing_data_and_transport_failures(self):
@@ -38,6 +41,32 @@ class Stage1Tests(unittest.TestCase):
             ]), encoding="utf-8")
             result = parse_report(path)
             self.assertEqual(result.parse_status, "INVALID")
+            self.assertEqual(result.completeness, "incomplete")
+            self.assertEqual(result.provenance["source_kind"], "synthetic")
+
+    def test_service_persists_check_failure_separately_from_execution(self):
+        service = JobService(Store(), max_workers=1, adapter=SyntheticTimingAdapter("normal"))
+        spec = JobSpec("negative", "design-a", "PCIe", "synthetic-timing", "TT_25C", -0.08, "ps")
+        service.submit(spec)
+        service.futures["negative"].result(timeout=2)
+        result = service.get("negative")
+        self.assertEqual(result["status"], "SUCCEEDED")
+        self.assertEqual(result["parse_status"], "OK")
+        self.assertEqual(result["check_status"], "FAIL")
+        self.assertEqual(result["completeness"], "complete")
+        self.assertEqual(result["provenance"]["source_kind"], "synthetic")
+
+    def test_service_persists_incomplete_parse_provenance(self):
+        service = JobService(Store(), max_workers=1, adapter=SyntheticTimingAdapter("missing_worst_slack"))
+        spec = JobSpec("incomplete", "design-a", "PCIe", "synthetic-timing", "TT_25C", 0.12, "ns")
+        service.submit(spec)
+        service.futures["incomplete"].result(timeout=2)
+        result = service.get("incomplete")
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["parse_status"], "INVALID")
+        self.assertEqual(result["check_status"], "UNKNOWN")
+        self.assertEqual(result["completeness"], "incomplete")
+        self.assertEqual(result["provenance"]["source_kind"], "synthetic")
 
     def test_retry_records_attempts_and_exhausts_retryable_errors(self):
         spec = JobSpec("retry", "design-a", "PCIe", "synthetic-timing", "TT_25C", 0.12, "ns")

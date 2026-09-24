@@ -7,11 +7,17 @@ REQUIRED = ("fixture_format_version", "run_id", "stage", "corner", "tool_exit_co
 
 
 def _finish(values, errors, source_sha256):
+    provenance = {
+        "source_kind": "synthetic",
+        "source_sha256": source_sha256,
+        "parser": "eda_lab.parser:v1",
+        "artifact_kind": "timing_report",
+    }
     for key in REQUIRED:
         if key not in values:
             errors.append(f"missing field {key}")
     if errors:
-        return ParseResult("INVALID", "UNKNOWN", {}, errors)
+        return ParseResult("INVALID", "UNKNOWN", {}, errors, "incomplete", provenance)
     try:
         version = int(values["fixture_format_version"])
         if version != 1:
@@ -24,7 +30,7 @@ def _finish(values, errors, source_sha256):
         unit = match.group(2)
         slack_ns = numeric if unit == "ns" else numeric / 1000.0
     except ValueError as exc:
-        return ParseResult("INVALID", "UNKNOWN", {}, [str(exc)])
+        return ParseResult("INVALID", "UNKNOWN", {}, [str(exc)], "incomplete", provenance)
     metrics = {
         "source_kind": "synthetic",
         "fixture_format_version": version,
@@ -38,7 +44,14 @@ def _finish(values, errors, source_sha256):
         "source_sha256": source_sha256,
         "job_status": "SUCCEEDED" if exit_code == 0 else "FAILED",
     }
-    return ParseResult("OK", "PASS" if slack_ns >= 0 else "FAIL", metrics, [])
+    provenance = {
+        **provenance,
+        "tool_exit_code": exit_code,
+        "flow_name": values["stage"],
+        "corner": values["corner"],
+        "run_id": values["run_id"],
+    }
+    return ParseResult("OK", "PASS" if slack_ns >= 0 else "FAIL", metrics, [], "complete", provenance)
 
 
 def _consume(path: str | Path, streaming: bool) -> ParseResult:

@@ -15,7 +15,8 @@ class Store:
         CREATE TABLE IF NOT EXISTS runs (
           job_id TEXT PRIMARY KEY, design_id TEXT NOT NULL, ip_family TEXT NOT NULL,
           flow_name TEXT NOT NULL, status TEXT NOT NULL, parse_status TEXT NOT NULL,
-          check_status TEXT NOT NULL, artifact_path TEXT, error TEXT
+          check_status TEXT NOT NULL, completeness TEXT NOT NULL DEFAULT 'unknown',
+          provenance TEXT NOT NULL DEFAULT '{}', artifact_path TEXT, error TEXT
         );
         CREATE TABLE IF NOT EXISTS metrics (
           job_id TEXT PRIMARY KEY REFERENCES runs(job_id), payload TEXT NOT NULL
@@ -37,17 +38,19 @@ class Store:
     def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str) -> None:
         with self._lock:
             self.connection.execute(
-                "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status) "
-                "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN')",
+                "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, provenance) "
+                "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', '{}')",
                 (job_id, design_id, ip_family, flow_name),
             )
             self.connection.commit()
 
     def update_run(self, job_id: str, **fields: Any) -> None:
-        allowed = {"status", "parse_status", "check_status", "artifact_path", "error"}
+        allowed = {"status", "parse_status", "check_status", "completeness", "provenance", "artifact_path", "error"}
         fields = {key: value for key, value in fields.items() if key in allowed}
         if not fields:
             return
+        if "provenance" in fields:
+            fields["provenance"] = json.dumps(fields["provenance"] or {}, sort_keys=True)
         assignments = ", ".join(f"{key} = ?" for key in fields)
         with self._lock:
             self.connection.execute(f"UPDATE runs SET {assignments} WHERE job_id = ?", (*fields.values(), job_id))
@@ -90,6 +93,7 @@ class Store:
             if row is None:
                 return None
             result = dict(row)
+            result["provenance"] = json.loads(result["provenance"] or "{}")
             metric = self.connection.execute("SELECT payload FROM metrics WHERE job_id = ?", (job_id,)).fetchone()
             result["metrics"] = json.loads(metric["payload"]) if metric else None
             result["attempts"] = [dict(item) for item in self.connection.execute(

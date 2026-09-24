@@ -48,10 +48,10 @@ class JobService:
                 result = parse_report(artifact)
                 if result.parse_status == "INVALID":
                     self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact))
-                    self.store.update_run(spec.job_id, status="FAILED", parse_status="INVALID", check_status="UNKNOWN", artifact_path=str(artifact), error="; ".join(result.errors))
+                    self.store.update_run(spec.job_id, status="FAILED", parse_status="INVALID", check_status="UNKNOWN", completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error="; ".join(result.errors))
                     return
                 self.store.record_attempt(spec.job_id, attempt_no, "SUCCEEDED", artifact_path=str(artifact))
-                self.store.update_run(spec.job_id, status="SUCCEEDED", parse_status=result.parse_status, check_status=result.check_status, artifact_path=str(artifact), error=None)
+                self.store.update_run(spec.job_id, status="SUCCEEDED", parse_status=result.parse_status, check_status=result.check_status, completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error=None)
                 if result.metrics:
                     self.store.save_metrics(spec.job_id, result.metrics)
                 return

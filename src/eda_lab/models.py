@@ -18,3 +18,5 @@ class ParseResult:
     check_status: str
     metrics: dict[str, Any]
     errors: list[str]
+    completeness: str = "unknown"
+    provenance: dict[str, Any] | None = None

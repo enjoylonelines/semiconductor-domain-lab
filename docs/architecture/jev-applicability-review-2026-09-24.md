@@ -50,6 +50,13 @@ The EDA flow is therefore a strong next application target for the JEV contract.
 - Do not claim real EDA readiness; the current tests remain synthetic.
 - Do not add a generic JEV abstraction before the existing EDA result contract is made explicit.
 
-## Recommendation
+## Applied slice
 
-Apply the first JEV slice to Store.runs and JobService after the ontology state contract stabilizes. The smallest useful change is a backward-compatible result projection plus completeness/provenance tests. A migration to durable external workers should remain a separate decision.
+The first JEV slice is now applied to `Store.runs`, `JobService`, and the parser result:
+
+- `completeness` is persisted as `complete`, `incomplete`, or `unknown`.
+- structured `provenance` is persisted and returned with the run, including synthetic source kind, report hash, flow, corner, parser version, and tool exit code.
+- execution success remains independent from `check_status=FAIL`; missing report evidence remains `parse_status=INVALID` and `check_status=UNKNOWN`.
+- the acceptance suite now covers these paths with 17 passing tests.
+
+The implementation remains synthetic and local. A migration to durable external workers, real tool provenance, and cross-process recovery is a separate decision.
