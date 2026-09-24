@@ -11,6 +11,7 @@
 - SDK 미설치·실행 파일 없음·연결 실패·timeout을 공통 오류로 정규화
 - 실제 adapter는 client를 주입받아 lifecycle과 provenance를 유지
 - fake client로 호출 순서와 cleanup을 검증
+- `ReplayTrace32Client`와 `ReplayAardvarkClient`로 실제 SDK 없이 명령 응답·transaction 데이터를 주입
 
 ## 검증 결과
 

@@ -85,3 +85,46 @@ class AardvarkModuleClient:
         if self.module is not None and self.handle is not None:
             self.module.close(self.handle)
         self.handle = None
+
+
+class ReplayTrace32Client:
+    """Deterministic command replay for development without PowerView or a target."""
+
+    def __init__(self, responses: dict[str, str]):
+        self.responses = responses
+        self.connected = False
+
+    def connect(self, endpoint: str | None = None) -> None:
+        self.connected = True
+
+    def command(self, command: str) -> str:
+        if not self.connected:
+            raise RuntimeError("configuration_error: replay TRACE32 client is not connected")
+        if command not in self.responses:
+            raise RuntimeError("fixture_missing: TRACE32 command response")
+        return self.responses[command]
+
+    def close(self) -> None:
+        self.connected = False
+
+
+class ReplayAardvarkClient:
+    """Deterministic transaction replay; no USB device or electrical I/O."""
+
+    def __init__(self, responses: dict[str, Any]):
+        self.responses = responses
+        self.opened = False
+
+    def open(self, device_id: int | None = None) -> None:
+        self.opened = True
+
+    def transfer(self, transaction: dict[str, Any]) -> Any:
+        if not self.opened:
+            raise RuntimeError("configuration_error: replay Aardvark client is not open")
+        key = str(transaction)
+        if key not in self.responses:
+            raise RuntimeError("fixture_missing: Aardvark transaction response")
+        return self.responses[key]
+
+    def close(self) -> None:
+        self.opened = False

@@ -4,6 +4,8 @@ import unittest
 from eda_lab.clients import (
     AardvarkClientConfig,
     AardvarkModuleClient,
+    ReplayAardvarkClient,
+    ReplayTrace32Client,
     Trace32ClientConfig,
     Trace32SubprocessClient,
 )
@@ -24,6 +26,18 @@ class FakeAardvarkModule:
 
 
 class ClientWrapperTests(unittest.TestCase):
+    def test_replay_clients_inject_deterministic_data(self):
+        trace = ReplayTrace32Client({"PRINT VERSION.SOFTWARE()": "TRACE32 replay"})
+        trace.connect()
+        self.assertEqual(trace.command("PRINT VERSION.SOFTWARE()"), "TRACE32 replay")
+        trace.close()
+
+        transaction = {"bus": "I2C", "address": "0x50", "read": 4}
+        aardvark = ReplayAardvarkClient({str(transaction): "aabbccdd"})
+        aardvark.open()
+        self.assertEqual(aardvark.transfer(transaction), "aabbccdd")
+        aardvark.close()
+
     def test_trace32_subprocess_wrapper_builds_explicit_command(self):
         calls = []
         def runner(args, **kwargs):
