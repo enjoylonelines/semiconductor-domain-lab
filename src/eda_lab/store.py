@@ -201,7 +201,8 @@ class Store:
                 "SELECT 1 FROM findings b WHERE b.revision_id = ? AND b.startpoint = c.startpoint "
                 "AND b.endpoint = c.endpoint AND b.path_group = c.path_group "
                 "AND b.analysis_type = c.analysis_type AND b.corner = c.corner AND b.slack_ns < 0) "
-                "ORDER BY c.slack_ns ASC",
+                "ORDER BY c.slack_ns ASC, c.startpoint ASC, c.endpoint ASC, c.path_group ASC, "
+                "c.analysis_type ASC, c.corner ASC",
                 (candidate_revision, baseline_revision),
             ).fetchall()
             return {"comparability": "COMPARABLE", "findings": [dict(row) for row in rows]}

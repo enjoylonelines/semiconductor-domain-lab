@@ -32,6 +32,18 @@ PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v
 
 Result(결과): 38 tests(테스트) passed(통과) in `0.563s`. Existing SQLite connection `ResourceWarning` messages remained; no connection-lifecycle change(연결 수명주기 변경) was included.
 
+## Measured challenger(측정된 도전 대안)
+
+The same deterministic synthetic workload(동일 결정적 합성 작업부하) used two comparable revisions(비교 가능한 두 설계 버전), 10,000 finding rows(발견 항목 행) per revision(설계 버전), and 1,000 candidate-only negative-slack findings(후보 전용 음수 여유 발견 항목). The query returned 1,000 new violations(새 위반).
+
+| measurement(측정) | baseline(기준선) | composite index challenger(복합 인덱스 도전 대안) |
+| --- | --- | --- |
+| elapsed seconds(경과 초) | `1.361966` | `0.002929` |
+| result identity/order(결과 식별/순서) | reference(기준) | identical(동일) |
+| SQLite plan(라이트급 SQL 저장소 계획) | scan candidate(후보 스캔) + correlated scan(상관 스캔) | covering index search(커버링 인덱스 검색) for candidate(후보) and baseline(기준선) |
+
+The first measurement exposed non-deterministic ordering(비결정적 순서) for equal slack(동일 여유 시간) across the two plans(두 계획). The query contract(조회 계약) was reinforced with the full Finding identity(발견 항목 식별) as tie-breakers(동률 해소 키), then the identical workload(동일 작업부하) was rerun. The indexed and non-indexed results were identical.
+
 ## Limits(한계) and stop(종료)
 
-No synthetic volume benchmark(합성 규모 벤치마크), SQLite query-plan capture(라이트급 SQL 저장소 조회 계획 수집), PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`, materialization(사전 계산), partitioning(파티셔닝), or production migration(운영 마이그레이션) was run. The index is not adopted on a performance claim. This ends after one data model(데이터 모델) and one unopened challenger(열지 않은 도전 대안).
+This is one local SQLite(라이트급 SQL 저장소) observation, without concurrent writers(동시 작성자), storage-size measurement(저장 크기 측정), ingest cost(적재 비용), or PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`. Materialization(사전 계산), partitioning(파티셔닝), and production migration(운영 마이그레이션) were not run. The index remains an explicit opt-in challenger(명시 선택 도전 대안) pending Human Decision(사람 결정); it is not a general production recommendation(운영 일반 권고).

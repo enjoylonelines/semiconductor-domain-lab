@@ -27,9 +27,15 @@ class ResultQueryTests(unittest.TestCase):
         self.assertEqual(outcome, {"comparability": "CONDITION_CHANGED", "findings": []})
 
     def test_composite_query_index_is_created_only_as_the_single_challenger(self):
+        self.store.save_findings("r2", [
+            ("run-2", "A/Q", "B/D", "clk", "setup", "TT", -0.2),
+            ("run-2", "A/Q", "C/D", "clk", "setup", "TT", -0.2),
+        ])
+        before = self.store.new_violations("r1", "r2")
         self.assertFalse(self.store.has_finding_query_index())
         self.store.create_finding_query_index()
         self.assertTrue(self.store.has_finding_query_index())
+        self.assertEqual(self.store.new_violations("r1", "r2"), before)
 
 
 if __name__ == "__main__":
