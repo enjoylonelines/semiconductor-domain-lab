@@ -25,6 +25,12 @@ class Store:
           status TEXT NOT NULL, error_type TEXT, error TEXT, artifact_path TEXT,
           PRIMARY KEY(job_id, attempt_no)
         );
+        CREATE TABLE IF NOT EXISTS metric_rows (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL REFERENCES runs(job_id),
+          metric_name TEXT NOT NULL, stage TEXT NOT NULL, corner TEXT NOT NULL,
+          value REAL NOT NULL, unit TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_metric_rows_stage_corner ON metric_rows(stage, corner, metric_name);
         """)
         self.connection.commit()
 
@@ -60,6 +66,23 @@ class Store:
         with self._lock:
             self.connection.execute("INSERT OR REPLACE INTO metrics(job_id, payload) VALUES (?, ?)", (job_id, json.dumps(payload, sort_keys=True)))
             self.connection.commit()
+
+    def save_metric_rows(self, rows: list[tuple[str, str, str, str, float, str]]) -> None:
+        with self._lock:
+            self.connection.executemany(
+                "INSERT INTO metric_rows(job_id, metric_name, stage, corner, value, unit) VALUES (?, ?, ?, ?, ?, ?)",
+                rows,
+            )
+            self.connection.commit()
+
+    def query_metric_summary(self, stage: str, corner: str, metric_name: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT COUNT(*) AS count, MIN(value) AS min_value, MAX(value) AS max_value, AVG(value) AS avg_value "
+                "FROM metric_rows WHERE stage = ? AND corner = ? AND metric_name = ?",
+                (stage, corner, metric_name),
+            ).fetchone()
+            return dict(row) if row and row["count"] else None
 
     def get_run(self, job_id: str) -> dict[str, Any] | None:
         with self._lock:

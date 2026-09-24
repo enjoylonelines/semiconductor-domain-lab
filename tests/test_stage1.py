@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from eda_lab.models import JobSpec
-from eda_lab.parser import parse_report
+from eda_lab.parser import parse_report, parse_report_streaming
 from eda_lab.service import JobService
 from eda_lab.runner import SyntheticTimingAdapter
 from eda_lab.store import Store
@@ -17,7 +17,9 @@ class Stage1Tests(unittest.TestCase):
                 "corner=SS_0C", "tool_exit_code=0", "worst_slack=-80 ps", "",
             ]), encoding="utf-8")
             result = parse_report(path)
+            streamed = parse_report_streaming(path)
             self.assertEqual(result.parse_status, "OK")
+            self.assertEqual(streamed.metrics["source_sha256"], result.metrics["source_sha256"])
             self.assertEqual(result.check_status, "FAIL")
             self.assertEqual(result.metrics["worst_slack_ns"], -0.08)
 
