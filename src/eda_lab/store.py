@@ -18,6 +18,8 @@ class Store:
           job_id TEXT PRIMARY KEY, design_id TEXT NOT NULL, ip_family TEXT NOT NULL,
           flow_name TEXT NOT NULL, status TEXT NOT NULL, parse_status TEXT NOT NULL,
           check_status TEXT NOT NULL, completeness TEXT NOT NULL DEFAULT 'unknown',
+          semantic_status TEXT NOT NULL DEFAULT 'UNKNOWN', provenance_status TEXT NOT NULL DEFAULT 'UNKNOWN',
+          trust_status TEXT NOT NULL DEFAULT 'UNKNOWN',
           provenance TEXT NOT NULL DEFAULT '{}', artifact_path TEXT, error TEXT,
           updated_at REAL NOT NULL DEFAULT 0
         );
@@ -36,8 +38,22 @@ class Store:
           value REAL NOT NULL, unit TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_metric_rows_stage_corner ON metric_rows(stage, corner, metric_name);
+        CREATE TABLE IF NOT EXISTS revisions (
+          revision_id TEXT PRIMARY KEY, design_id TEXT NOT NULL, source_revision TEXT NOT NULL,
+          liberty_hash TEXT NOT NULL, sdc_hash TEXT NOT NULL, tool_version TEXT NOT NULL,
+          parser_version TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS findings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, revision_id TEXT NOT NULL REFERENCES revisions(revision_id),
+          run_id TEXT NOT NULL, startpoint TEXT NOT NULL, endpoint TEXT NOT NULL,
+          path_group TEXT NOT NULL, analysis_type TEXT NOT NULL, corner TEXT NOT NULL,
+          slack_ns REAL NOT NULL
+        );
         """)
         self._add_column_if_missing("runs", "updated_at", "REAL NOT NULL DEFAULT 0")
+        self._add_column_if_missing("runs", "semantic_status", "TEXT NOT NULL DEFAULT 'UNKNOWN'")
+        self._add_column_if_missing("runs", "provenance_status", "TEXT NOT NULL DEFAULT 'UNKNOWN'")
+        self._add_column_if_missing("runs", "trust_status", "TEXT NOT NULL DEFAULT 'UNKNOWN'")
         self._add_column_if_missing("attempts", "retry_class", "TEXT")
         self._add_column_if_missing("attempts", "started_at", "REAL NOT NULL DEFAULT 0")
         self._add_column_if_missing("attempts", "updated_at", "REAL NOT NULL DEFAULT 0")
@@ -54,14 +70,14 @@ class Store:
     def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str) -> None:
         with self._lock:
             self.connection.execute(
-                "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, provenance, updated_at) "
-                "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', '{}', ?)",
+                "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, semantic_status, provenance_status, trust_status, provenance, updated_at) "
+                "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', '{}', ?)",
                 (job_id, design_id, ip_family, flow_name, self._now()),
             )
             self.connection.commit()
 
     def update_run(self, job_id: str, **fields: Any) -> None:
-        allowed = {"status", "parse_status", "check_status", "completeness", "provenance", "artifact_path", "error"}
+        allowed = {"status", "parse_status", "check_status", "completeness", "semantic_status", "provenance_status", "trust_status", "provenance", "artifact_path", "error"}
         fields = {key: value for key, value in fields.items() if key in allowed}
         if not fields:
             return
@@ -130,3 +146,62 @@ class Store:
                 "SELECT job_id FROM runs WHERE status = 'RUNNING' AND updated_at <= ?", (cutoff,)
             ).fetchall()]
         return [run for job_id in job_ids if (run := self.get_run(job_id)) is not None]
+
+    def create_revision(self, revision_id: str, design_id: str, source_revision: str, liberty_hash: str,
+                        sdc_hash: str, tool_version: str, parser_version: str) -> None:
+        with self._lock:
+            self.connection.execute(
+                "INSERT INTO revisions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (revision_id, design_id, source_revision, liberty_hash, sdc_hash, tool_version, parser_version),
+            )
+            self.connection.commit()
+
+    def save_findings(self, revision_id: str, findings: list[tuple[str, str, str, str, str, str, float]]) -> None:
+        with self._lock:
+            self.connection.executemany(
+                "INSERT INTO findings(revision_id, run_id, startpoint, endpoint, path_group, analysis_type, corner, slack_ns) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                [(revision_id, *finding) for finding in findings],
+            )
+            self.connection.commit()
+
+    def has_finding_query_index(self) -> bool:
+        row = self.connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_findings_revision_identity'"
+        ).fetchone()
+        return row is not None
+
+    def create_finding_query_index(self) -> None:
+        with self._lock:
+            self.connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_findings_revision_identity "
+                "ON findings(revision_id, startpoint, endpoint, path_group, analysis_type, corner, slack_ns)"
+            )
+            self.connection.commit()
+
+    def new_violations(self, baseline_revision: str, candidate_revision: str) -> dict[str, Any]:
+        with self._lock:
+            revisions = {
+                row["revision_id"]: dict(row) for row in self.connection.execute(
+                    "SELECT * FROM revisions WHERE revision_id IN (?, ?)", (baseline_revision, candidate_revision)
+                )
+            }
+            baseline, candidate = revisions.get(baseline_revision), revisions.get(candidate_revision)
+            if not baseline or not candidate:
+                raise KeyError("both revisions must exist")
+            if baseline["design_id"] != candidate["design_id"]:
+                return {"comparability": "INCOMPARABLE", "findings": []}
+            if any(baseline[field] != candidate[field] for field in ("liberty_hash", "sdc_hash")):
+                return {"comparability": "CONDITION_CHANGED", "findings": []}
+            if any(baseline[field] != candidate[field] for field in ("tool_version", "parser_version")):
+                return {"comparability": "TOOL_CHANGED", "findings": []}
+            rows = self.connection.execute(
+                "SELECT c.startpoint, c.endpoint, c.path_group, c.analysis_type, c.corner, c.slack_ns "
+                "FROM findings c WHERE c.revision_id = ? AND c.slack_ns < 0 AND NOT EXISTS ("
+                "SELECT 1 FROM findings b WHERE b.revision_id = ? AND b.startpoint = c.startpoint "
+                "AND b.endpoint = c.endpoint AND b.path_group = c.path_group "
+                "AND b.analysis_type = c.analysis_type AND b.corner = c.corner AND b.slack_ns < 0) "
+                "ORDER BY c.slack_ns ASC",
+                (candidate_revision, baseline_revision),
+            ).fetchall()
+            return {"comparability": "COMPARABLE", "findings": [dict(row) for row in rows]}

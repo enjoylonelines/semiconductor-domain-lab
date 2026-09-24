@@ -1,3 +1,6 @@
+import os
+import shutil
+import subprocess
 import tempfile
 import time
 from pathlib import Path
@@ -42,3 +45,80 @@ class SyntheticTimingAdapter:
             payload += "# synthetic artifact padding\n" + "x" * (self.artifact_bytes - len(payload))
         report.write_text(payload, encoding="utf-8")
         return AdapterRunResult(report, process_exit_code=0)
+
+
+class OpenStaSubprocessAdapter:
+    """Run one fixed OpenSTA fixture as a separately observed child process."""
+
+    def __init__(
+        self,
+        *,
+        sta_path: Path,
+        liberty_path: Path,
+        fixture_dir: Path,
+        sdc_name: str = "normal.sdc",
+        script_name: str = "run.tcl",
+        timeout_seconds: float = 30,
+        termination_grace_seconds: float = 1,
+    ):
+        self.sta_path = Path(sta_path)
+        self.liberty_path = Path(liberty_path)
+        self.fixture_dir = Path(fixture_dir)
+        self.sdc_name = sdc_name
+        self.script_name = script_name
+        self.timeout_seconds = timeout_seconds
+        self.termination_grace_seconds = termination_grace_seconds
+
+    def _required_fixture(self, name: str) -> Path:
+        path = self.fixture_dir / name
+        if not path.is_file():
+            raise FileNotFoundError(f"required OpenSTA fixture is missing: {path}")
+        return path
+
+    def run(self, spec: JobSpec) -> AdapterRunResult:
+        if not self.sta_path.is_file():
+            raise FileNotFoundError(f"OpenSTA executable is missing: {self.sta_path}")
+        if not self.liberty_path.is_file():
+            raise FileNotFoundError(f"OpenSTA Liberty file is missing: {self.liberty_path}")
+
+        script = self._required_fixture(self.script_name)
+        sdc = self._required_fixture(self.sdc_name)
+        netlist = self._required_fixture("tiny_mapped.v")
+        directory = Path(tempfile.mkdtemp(prefix=f"eda-opensta-{spec.job_id}-"))
+        for source in (script, sdc, netlist):
+            shutil.copy2(source, directory / source.name)
+
+        environment = os.environ.copy()
+        environment.update({
+            "EDA_LIB": str(self.liberty_path),
+            "EDA_SDC": str(directory / sdc.name),
+        })
+        process = subprocess.Popen(
+            [str(self.sta_path), "-no_init", "-exit", script.name],
+            cwd=directory,
+            env=environment,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            stdout, stderr = process.communicate(timeout=self.timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            termination = "SIGTERM"
+            try:
+                stdout, stderr = process.communicate(timeout=self.termination_grace_seconds)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
+                termination = "SIGKILL"
+            (directory / "timing.report").write_text(stdout or "", encoding="utf-8")
+            (directory / "stderr.log").write_text(stderr or "", encoding="utf-8")
+            raise TimeoutError(
+                f"OpenSTA timed out after {self.timeout_seconds}s; pid={process.pid}; termination={termination}"
+            )
+
+        report = directory / "timing.report"
+        report.write_text(stdout, encoding="utf-8")
+        (directory / "stderr.log").write_text(stderr, encoding="utf-8")
+        return AdapterRunResult(report, process_exit_code=process.returncode)

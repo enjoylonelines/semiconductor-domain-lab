@@ -17,6 +17,8 @@ class OpenStaSetupMaxTests(unittest.TestCase):
 
         self.assertEqual(result.parse_status, "OK")
         self.assertEqual(result.check_status, "PASS")
+        self.assertEqual(result.semantic_status, "VALID")
+        self.assertEqual(result.provenance_status, "VALID")
         self.assertEqual(result.completeness, "complete")
         self.assertEqual(result.metrics["source_kind"], "tool_generated")
         self.assertEqual(result.metrics["tool_name"], "OpenSTA")
@@ -35,7 +37,43 @@ class OpenStaSetupMaxTests(unittest.TestCase):
 
         self.assertEqual(result.parse_status, "OK")
         self.assertEqual(result.check_status, "FAIL")
+        self.assertEqual(result.semantic_status, "VALID")
         self.assertAlmostEqual(result.metrics["worst_slack_ns"], -0.440050)
+
+    def test_opensta_analysis_type_mismatch_is_semantic_invalid_not_a_trusted_result(self):
+        raw = (EVIDENCE / "normal.log").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "analysis-type-mismatch.log"
+            path.write_text(raw.replace("Path Type: max", "Path Type: min"), encoding="utf-8")
+            result = parse_report(path)
+
+        self.assertEqual(result.parse_status, "OK")
+        self.assertEqual(result.semantic_status, "INVALID")
+        self.assertEqual(result.check_status, "UNKNOWN")
+        self.assertIn("OpenSTA path type min does not match setup/max profile", result.errors)
+
+    def test_service_persists_semantic_invalid_as_failed_and_untrusted(self):
+        raw = (EVIDENCE / "normal.log").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "analysis-type-mismatch.log"
+            report.write_text(raw.replace("Path Type: max", "Path Type: min"), encoding="utf-8")
+            adapter = type(
+                "SemanticMismatchAdapter",
+                (),
+                {"run": lambda _, __: AdapterRunResult(report, process_exit_code=0)},
+            )()
+            service = JobService(Store(), max_workers=1, max_attempts=1, adapter=adapter)
+            spec = JobSpec("opensta-semantic", "tiny", "research", "opensta_setup_max", "tt_025C_1v80", 0, "ns")
+
+            service.submit(spec)
+            service.futures[spec.job_id].result(timeout=2)
+            result = service.get(spec.job_id)
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["parse_status"], "OK")
+        self.assertEqual(result["semantic_status"], "INVALID")
+        self.assertEqual(result["trust_status"], "INVALID")
+        self.assertEqual(result["attempts"][-1]["error_type"], "semantic_invalid")
 
     def test_opensta_report_requires_complete_supported_profile(self):
         raw = (EVIDENCE / "normal.log").read_text(encoding="utf-8")
@@ -65,7 +103,8 @@ class OpenStaSetupMaxTests(unittest.TestCase):
 
         self.assertEqual(unsupported_result.parse_status, "INVALID")
         self.assertIn("unsupported OpenSTA version 3.2.0", unsupported_result.errors)
-        self.assertEqual(inconsistent_result.parse_status, "INVALID")
+        self.assertEqual(inconsistent_result.parse_status, "OK")
+        self.assertEqual(inconsistent_result.semantic_status, "INVALID")
         self.assertIn("reported path slack differs from worst slack", inconsistent_result.errors)
 
     def test_opensta_error_diagnostic_is_not_parsed_as_a_timing_pass(self):
@@ -96,6 +135,9 @@ class OpenStaSetupMaxTests(unittest.TestCase):
         self.assertEqual(result["status"], "SUCCEEDED")
         self.assertEqual(result["parse_status"], "OK")
         self.assertEqual(result["check_status"], "FAIL")
+        self.assertEqual(result["semantic_status"], "VALID")
+        self.assertEqual(result["provenance_status"], "VALID")
+        self.assertEqual(result["trust_status"], "TRUSTED")
         self.assertEqual(result["provenance"]["source_kind"], "tool_generated")
         self.assertAlmostEqual(result["metrics"]["worst_slack_ns"], -0.440050)
 
@@ -116,6 +158,7 @@ class OpenStaSetupMaxTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAILED")
         self.assertEqual(result["parse_status"], "OK")
         self.assertEqual(result["check_status"], "PASS")
+        self.assertEqual(result["trust_status"], "INVALID")
         self.assertEqual(result["attempts"][-1]["error_type"], "tool_exit")
 
 

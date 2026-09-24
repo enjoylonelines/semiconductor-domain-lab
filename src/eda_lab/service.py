@@ -18,6 +18,33 @@ class JobService:
         self.lock = Lock()
         self.futures = {}
 
+    @staticmethod
+    def _trust_status(result, process_exit_code: int | None) -> str:
+        if result.parse_status == "INVALID" or result.semantic_status == "INVALID":
+            return "INVALID"
+        if process_exit_code is None:
+            return "UNKNOWN"
+        if process_exit_code != 0:
+            return "INVALID"
+        if result.provenance_status != "VALID":
+            return "UNKNOWN"
+        if result.parse_status == "OK" and result.semantic_status == "VALID":
+            return "TRUSTED"
+        return "UNKNOWN"
+
+    @classmethod
+    def _validation_fields(cls, result, process_exit_code: int | None) -> dict:
+        provenance = {**(result.provenance or {}), "observed_process_exit_code": process_exit_code}
+        return {
+            "parse_status": result.parse_status,
+            "check_status": result.check_status,
+            "completeness": result.completeness,
+            "semantic_status": result.semantic_status,
+            "provenance_status": result.provenance_status,
+            "trust_status": cls._trust_status(result, process_exit_code),
+            "provenance": provenance,
+        }
+
     def submit(self, spec: JobSpec) -> dict:
         with self.lock:
             existing = self.store.get_run(spec.job_id)
@@ -56,26 +83,34 @@ class JobService:
                     artifact = adapter_result
                     process_exit_code = None
                 result = parse_report(artifact)
+                validation_fields = self._validation_fields(result, process_exit_code)
                 if result.parse_status == "INVALID":
                     self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact), retry_class="non_retryable")
-                    self.store.update_run(spec.job_id, status="FAILED", parse_status="INVALID", check_status="UNKNOWN", completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error="; ".join(result.errors))
+                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error="; ".join(result.errors))
+                    return
+                if result.semantic_status == "INVALID":
+                    error = "; ".join(result.errors)
+                    self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="semantic_invalid", error=error, artifact_path=str(artifact), retry_class="non_retryable")
+                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
+                    if result.metrics:
+                        self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 if process_exit_code is None:
                     error = "execution_outcome_unknown: adapter returned artifact without process exit code"
                     self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="execution_outcome_unknown", error=error, artifact_path=str(artifact), retry_class="non_retryable")
-                    self.store.update_run(spec.job_id, status="FAILED", parse_status=result.parse_status, check_status=result.check_status, completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error=error)
+                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 if process_exit_code != 0:
                     error = f"tool_exit: exit code {process_exit_code}"
                     self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="tool_exit", error=error, artifact_path=str(artifact), retry_class="non_retryable")
-                    self.store.update_run(spec.job_id, status="FAILED", parse_status=result.parse_status, check_status=result.check_status, completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error=error)
+                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 self.store.record_attempt(spec.job_id, attempt_no, "SUCCEEDED", artifact_path=str(artifact), retry_class="not_applicable")
-                self.store.update_run(spec.job_id, status="SUCCEEDED", parse_status=result.parse_status, check_status=result.check_status, completeness=result.completeness, provenance=result.provenance or {}, artifact_path=str(artifact), error=None)
+                self.store.update_run(spec.job_id, status="SUCCEEDED", **validation_fields, artifact_path=str(artifact), error=None)
                 if result.metrics:
                     self.store.save_metrics(spec.job_id, result.metrics)
                 return
@@ -85,7 +120,13 @@ class JobService:
                 if attempt_no < self.max_attempts:
                     time.sleep(self.retry_delay_seconds * attempt_no)
                     continue
-                self.store.update_run(spec.job_id, status="FAILED", error=f"{error_type}: exhausted after {attempt_no} attempts")
+                terminal_status = "TIMED_OUT" if isinstance(exc, TimeoutError) else "FAILED"
+                self.store.update_run(
+                    spec.job_id,
+                    status=terminal_status,
+                    trust_status="INVALID",
+                    error=f"{error_type}: exhausted after {attempt_no} attempts",
+                )
                 return
             except Exception as exc:
                 self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="execution_error", error=str(exc), retry_class="non_retryable")

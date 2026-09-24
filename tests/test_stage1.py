@@ -116,7 +116,7 @@ class Stage1Tests(unittest.TestCase):
         service.submit(spec)
         service.futures["retry"].result(timeout=2)
         result = service.get("retry")
-        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["status"], "TIMED_OUT")
         self.assertEqual(len(result["attempts"]), 2)
         self.assertEqual(result["attempts"][-1]["error_type"], "timeout")
 

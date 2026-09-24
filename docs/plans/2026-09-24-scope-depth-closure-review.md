@@ -89,15 +89,29 @@ Kafka/Redis 자체가 목표가 아니다. 현재 in-process worker가 어떤 �
 5. 공개 실제 report 1개 계열을 확보해 synthetic fixture와 구분한다.
 6. 원문 필드와 normalized result를 독립 oracle로 대조한다.
 
-### P1 — bounded async depth
+### P1 — Execution Reliability Deep Dive(실행 신뢰성 딥다이브)
 
-P0가 닫힌 뒤 아래 한 실험만 연다.
+P0(정확성 종료)의 실제 OpenSTA(정적 타이밍 분석 도구) parser/service(파서/서비스) 경계와 synthetic(합성) attempt-start/reconciliation(실행 시도 시작/상태 재조정) 근거는 후속 문서에서 기록됐다. 다음에는 이를 다시 구현하는 대신 [첫 번째 딥다이브 계획서](2026-09-24-eda-execution-correctness-deep-dive.md)가 정한 하나의 실제 subprocess lifecycle failure(하위 프로세스 수명주기 실패)만 연다.
 
-- 동일 run 요청/worker retry/timeout 중 하나를 골라 현재 lifecycle 실패를 재현
-- baseline과 최소 대안을 동일 workload에서 비교
-- 필요한 경우에만 idempotency key 또는 durable state transition을 도입
+- baseline(기준선)과 최대 하나의 최소 reinforcement/challenger(보강/도전 대안)를 동일 workload(작업부하)에서 비교한다.
+- Run/Attempt(작업/실행 시도), timeout/cancel(시간 초과/취소), lease/reconciliation(임대/상태 재조정), duplicate delivery(중복 전달), resource-aware concurrency(자원 인지 동시성)의 불변식을 측정한다.
+- Kafka(카프카), Redis(레디스), PostgreSQL(포스트그레스큐엘)는 관측된 한계와 사전 adoption gate(채택 기준)가 있을 때만 대안으로 연다.
 
-메시지 브로커 도입은 결과가 요구할 때만 결정한다.
+### P2 — EDA Result Modeling & Workload-driven Query Optimization(EDA 결과 모델링 및 업무 조회 기반 쿼리 최적화)
+
+[두 번째 딥다이브 계획서](2026-09-24-deep-dive-2-eda-data-model-query-optimization.md)는 P1(실행 신뢰성)과 별개로 결과 조회의 모델·비교 규칙·측정 책임을 가진다.
+
+- Design/Revision/Run/Attempt/Artifact/Metric/Finding(설계/설계 버전/작업/실행 시도/산출물/요약 지표/발견 항목) 관계와 comparability(비교 가능성)를 고정한다.
+- 대표 query workload(조회 작업부하)를 먼저 고르고, 같은 synthetic EDA-shaped workload(EDA 형태의 합성 작업부하)에서 최대 하나의 index/storage(인덱스/저장) 대안을 비교한다.
+- P1의 queue(대기열), worker(작업자), subprocess(하위 프로세스) 복구를 P2에서 중복 구현하지 않는다.
+
+### P3 — EDA Result Correctness & Contract Validation(EDA 결과 정합성 및 계약 검증)
+
+[세 번째 딥다이브 계획서](2026-09-24-deep-dive-3-eda-result-correctness.md)는 실행 또는 저장 구조가 아니라 raw EDA output(원시 EDA 출력)이 trusted normalized result(신뢰 정규화 결과)가 되는 계약을 책임진다.
+
+- execution/structural/semantic/provenance validation(실행/구조/의미/출처 검증)과 derived trust decision(파생 신뢰 판정)을 분리한다.
+- 실제 OpenSTA(정적 타이밍 분석 도구) fixture(고정 입력)와 mutation/corruption fixture(변형/손상 고정 입력)에서 false trusted result(거짓 신뢰 결과) 0을 검증한다.
+- P1의 worker/retry(작업자/재시도), P2의 schema/query optimization(스키마/쿼리 최적화)을 P3에서 중복 구현하지 않는다.
 
 ## 6. 종료 조건
 
@@ -122,6 +136,12 @@ P0가 닫힌 뒤 아래 한 실험만 연다.
 - duplicate completion이 들어오면 어떤 invariant가 깨질 수 있나?
 - 왜 Kafka를 쓰지 않았거나, 어떤 증거가 생기면 쓰겠는가?
 
-## 8. 다음 작업 1개
+## 8. 다음 Human Decision Gate(사람 결정 관문)
 
-현재 계획대로 **nonzero exit false-success를 회귀 테스트로 고정하고 최소 상태 매핑을 수정한 뒤 실제 report fixture gate로 이동한다.** hardware/JEV 확장은 그 전까지 멈춘다.
+이 문서는 구현 순서를 자동으로 시작하지 않는다. 사용자는 다음 중 하나를 선택한다.
+
+1. P1(실행 신뢰성): 실제 OpenSTA(정적 타이밍 분석 도구) subprocess lifecycle failure(하위 프로세스 수명주기 실패) 하나를 baseline/challenger(기준선/도전 대안) 사이클로 검증할지.
+2. P2(결과 모델링): synthetic EDA-shaped workload(EDA 형태의 합성 작업부하)에서 Finding identity/comparability(발견 항목 식별/비교 가능성)와 핵심 query(조회) 하나를 검증할지.
+3. P3(결과 정합성): 실제 OpenSTA(정적 타이밍 분석 도구) report(리포트)의 mutation/corruption(변형/손상) 하나를 baseline/challenger(기준선/도전 대안) 사이클로 검증할지.
+
+P1/P2/P3(실행 신뢰성/결과 모델링/결과 정합성)를 병렬 구현하거나, hardware/JEV(하드웨어/정의·증거·검증) 확장, Kafka(카프카) 도입, Career OS(커리어 운영체제) 전문 복사를 자동으로 수행하지 않는다.

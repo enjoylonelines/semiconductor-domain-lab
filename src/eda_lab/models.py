@@ -21,6 +21,8 @@ class ParseResult:
     errors: list[str]
     completeness: str = "unknown"
     provenance: dict[str, Any] | None = None
+    semantic_status: str = "UNKNOWN"
+    provenance_status: str = "UNKNOWN"
 
 
 @dataclass(frozen=True)

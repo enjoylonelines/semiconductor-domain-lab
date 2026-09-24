@@ -1,9 +1,12 @@
 import threading
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from eda_lab.models import AdapterRunResult, JobSpec
-from eda_lab.runner import SyntheticTimingAdapter
+from eda_lab.runner import OpenStaSubprocessAdapter, SyntheticTimingAdapter
 from eda_lab.service import JobService
 from eda_lab.store import Store
 
@@ -106,6 +109,72 @@ class AsyncLifecycleTests(unittest.TestCase):
         adapter.release.set()
         service.futures["live-worker"].result(timeout=2)
         self.assertEqual(service.get("live-worker")["status"], "SUCCEEDED")
+
+
+class OpenStaSubprocessAdapterTests(unittest.TestCase):
+    fixture_dir = Path(__file__).parents[1] / "docs/evidence/2026-09-24-real-sta"
+    sta_path = Path("/tmp/eda-opensta-20260924/build/sta")
+    liberty_path = Path("/tmp/eda-opensta-20260924/examples/sky130hd_tt.lib.gz")
+
+    @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
+    def test_real_opensta_workload_collects_a_complete_report(self):
+        adapter = OpenStaSubprocessAdapter(
+            sta_path=self.sta_path,
+            liberty_path=self.liberty_path,
+            fixture_dir=self.fixture_dir,
+            timeout_seconds=2,
+        )
+
+        result = adapter.run(spec("real-opensta-normal"))
+
+        self.assertEqual(result.process_exit_code, 0)
+        self.assertIn("EDA_LAB_REPORT_END", result.artifact_path.read_text(encoding="utf-8"))
+
+    @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
+    def test_timeout_terminates_a_real_opensta_child_before_the_report_finishes(self):
+        with tempfile.TemporaryDirectory(prefix="eda-opensta-timeout-test-") as directory_name:
+            fixture_dir = Path(directory_name)
+            for name in ("tiny_mapped.v", "normal.sdc"):
+                shutil.copy2(self.fixture_dir / name, fixture_dir / name)
+            delayed = fixture_dir / "delayed.tcl"
+            delayed.write_text("after 1000\n" + (self.fixture_dir / "run.tcl").read_text(encoding="utf-8"), encoding="utf-8")
+            adapter = OpenStaSubprocessAdapter(
+                sta_path=self.sta_path,
+                liberty_path=self.liberty_path,
+                fixture_dir=fixture_dir,
+                script_name="delayed.tcl",
+                timeout_seconds=0.05,
+                termination_grace_seconds=0.5,
+            )
+
+            with self.assertRaisesRegex(TimeoutError, "termination=SIGTERM"):
+                adapter.run(spec("real-opensta-timeout"))
+
+    @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
+    def test_confirmed_real_timeout_never_promotes_the_run_to_success(self):
+        with tempfile.TemporaryDirectory(prefix="eda-opensta-timeout-service-") as directory_name:
+            fixture_dir = Path(directory_name)
+            for name in ("tiny_mapped.v", "normal.sdc"):
+                shutil.copy2(self.fixture_dir / name, fixture_dir / name)
+            (fixture_dir / "delayed.tcl").write_text(
+                "after 1000\n" + (self.fixture_dir / "run.tcl").read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            adapter = OpenStaSubprocessAdapter(
+                sta_path=self.sta_path,
+                liberty_path=self.liberty_path,
+                fixture_dir=fixture_dir,
+                script_name="delayed.tcl",
+                timeout_seconds=0.05,
+            )
+            service = JobService(Store(), max_workers=1, max_attempts=1, adapter=adapter)
+            service.submit(spec("real-opensta-timeout-service"))
+            service.futures["real-opensta-timeout-service"].result(timeout=2)
+
+            result = service.get("real-opensta-timeout-service")
+            self.assertEqual(result["status"], "TIMED_OUT")
+            self.assertEqual(result["trust_status"], "INVALID")
+            self.assertEqual(result["attempts"][-1]["error_type"], "timeout")
 
 
 if __name__ == "__main__":

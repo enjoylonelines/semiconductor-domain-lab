@@ -29,6 +29,7 @@ def _provenance(source_kind: str, source_sha256: str, parser: str, **extra: obje
 
 
 def _invalid(errors: list[str], source_kind: str, source_sha256: str, parser: str,
+             *, semantic_status: str = "UNKNOWN", provenance_status: str = "UNKNOWN",
              **provenance_fields: object) -> ParseResult:
     return ParseResult(
         "INVALID",
@@ -37,6 +38,8 @@ def _invalid(errors: list[str], source_kind: str, source_sha256: str, parser: st
         errors,
         "incomplete",
         _provenance(source_kind, source_sha256, parser, **provenance_fields),
+        semantic_status,
+        provenance_status,
     )
 
 
@@ -51,7 +54,7 @@ def _synthetic_finish(values: dict[str, str], errors: list[str], source_sha256: 
         if key not in values:
             errors.append(f"missing field {key}")
     if errors:
-        return ParseResult("INVALID", "UNKNOWN", {}, errors, "incomplete", provenance)
+        return ParseResult("INVALID", "UNKNOWN", {}, errors, "incomplete", provenance, "UNKNOWN", "UNKNOWN")
     try:
         version = int(values["fixture_format_version"])
         if version != 1:
@@ -87,7 +90,7 @@ def _synthetic_finish(values: dict[str, str], errors: list[str], source_sha256: 
         "corner": values["corner"],
         "run_id": values["run_id"],
     }
-    return ParseResult("OK", "PASS" if slack_ns >= 0 else "FAIL", metrics, [], "complete", provenance)
+    return ParseResult("OK", "PASS" if slack_ns >= 0 else "FAIL", metrics, [], "complete", provenance, "VALID", "VALID")
 
 
 def _parse_synthetic(text: str, source_sha256: str) -> ParseResult:
@@ -129,8 +132,6 @@ def _parse_opensta_setup_max(text: str, source_sha256: str) -> ParseResult:
     endpoint = _single_match(r"^Endpoint:\s+(.+?)\s+\(", text, "endpoint", errors)
     path_group = _single_match(r"^Path Group:\s+(\S+)\s*$", text, "path group", errors)
     path_type = _single_match(r"^Path Type:\s+(\S+)\s*$", text, "path type", errors)
-    if path_type and path_type.group(1) != "max":
-        errors.append(f"unsupported path type {path_type.group(1)}")
     summary = _single_match(
         rf"^-+\n"
         rf"\s*({NUMBER})\s+data required time\n"
@@ -157,15 +158,6 @@ def _parse_opensta_setup_max(text: str, source_sha256: str) -> ParseResult:
     values = (required_ns, signed_arrival_ns, arrival_ns, slack_ns, worst_slack_ns)
     if not all(math.isfinite(value) for value in values):
         return _invalid(["non-finite OpenSTA timing value"], "tool_generated", source_sha256, parser_name)
-    if abs((required_ns + signed_arrival_ns) - slack_ns) > 0.000002:
-        return _invalid(["OpenSTA setup arithmetic mismatch"], "tool_generated", source_sha256, parser_name)
-    if abs(signed_arrival_ns + arrival_ns) > 0.000002:
-        return _invalid(["OpenSTA arrival summary mismatch"], "tool_generated", source_sha256, parser_name)
-    if abs(worst_slack_ns - slack_ns) > 0.0000005:
-        return _invalid(["reported path slack differs from worst slack"], "tool_generated", source_sha256, parser_name)
-    if (status_label == "MET" and slack_ns < 0) or (status_label == "VIOLATED" and slack_ns >= 0):
-        return _invalid(["OpenSTA slack label contradicts slack sign"], "tool_generated", source_sha256, parser_name)
-
     tool_version, tool_revision = banner.group(1), banner.group(2)
     metrics = {
         "source_kind": "tool_generated",
@@ -194,6 +186,19 @@ def _parse_opensta_setup_max(text: str, source_sha256: str) -> ParseResult:
         analysis_type="setup_max",
         report_profile="opensta-3.1.0-single-path-setup-max-v1",
     )
+    semantic_errors: list[str] = []
+    if path_type.group(1) != "max":
+        semantic_errors.append(f"OpenSTA path type {path_type.group(1)} does not match setup/max profile")
+    if abs((required_ns + signed_arrival_ns) - slack_ns) > 0.000002:
+        semantic_errors.append("OpenSTA setup arithmetic mismatch")
+    if abs(signed_arrival_ns + arrival_ns) > 0.000002:
+        semantic_errors.append("OpenSTA arrival summary mismatch")
+    if abs(worst_slack_ns - slack_ns) > 0.0000005:
+        semantic_errors.append("reported path slack differs from worst slack")
+    if (status_label == "MET" and slack_ns < 0) or (status_label == "VIOLATED" and slack_ns >= 0):
+        semantic_errors.append("OpenSTA slack label contradicts slack sign")
+    if semantic_errors:
+        return ParseResult("OK", "UNKNOWN", metrics, semantic_errors, "complete", provenance, "INVALID", "VALID")
     return ParseResult(
         "OK",
         "PASS" if status_label == "MET" else "FAIL",
@@ -201,6 +206,8 @@ def _parse_opensta_setup_max(text: str, source_sha256: str) -> ParseResult:
         [],
         "complete",
         provenance,
+        "VALID",
+        "VALID",
     )
 
 

@@ -11,6 +11,12 @@
 
 첫 번째 딥다이브의 범위는 **EDA execution correctness(EDA 실행 정확성) + resource-aware async execution(자원 인지 비동기 실행) + failure recovery/reconciliation(실패 복구/조정)** 이다.
 
+### 도메인·업무 환경 근거
+
+Yosys(합성 도구)와 OpenSTA(정적 타이밍 분석 도구)는 짧은 HTTP API(응용 프로그래밍 인터페이스) 호출이 아니라 외부 subprocess(하위 프로세스)로 수행하는 long-running workload(장시간 실행 작업)다. 실행 시간, CPU(중앙 처리 장치)·Memory(메모리) 점유, report artifact(보고서 산출물)는 입력과 flow(흐름)에 따라 달라질 수 있으므로 async I/O(비동기 입출력)만으로 동시 실행을 늘리는 것은 자원 정책이 아니다. 도구 종료, report(보고서) 생성, parser(파서) 수용, 설계 check(검사), DB state(데이터베이스 상태)는 서로 다른 관측이며 부분 실패에서 불일치할 수 있다.
+
+반복 분석 run(실행)에서는 같은 설계·제약·도구 조건을 다시 확인할 수 있어야 하므로 실행 이력과 provenance(출처 추적)가 필요하다. 저장소의 공개 업무 근거 J0/J2/J3/J4는 API(응용 프로그래밍 인터페이스), 비동기 메시지, RDB(관계형 데이터베이스), Redis Pub/Sub(레디스 발행/구독), 반도체 로그·리포트 파싱, 컨테이너 운영, migration(마이그레이션), CI/CD(지속적 통합/지속적 배포), HW(하드웨어) 협업을 연결한다. 이것은 EDA workflow(EDA 작업 흐름)에 적용할 engineering requirement(엔지니어링 요구사항)를 도출하는 근거이며, 회사 내부가 동일한 worker(작업자)·queue(대기열)·DB schema(데이터베이스 스키마)를 사용한다는 주장이 아니다. 세부 근거와 한계는 [출처 장부](../references/source-register-2026-09-23.md#채용-근거)를 따른다.
+
 ### 선행 근거와 이번 경계
 
 - OpenSTA(정적 타이밍 분석 도구) 3.1.0의 고정 setup/max(최대 지연) 보고서 두 개를 실제 입력으로 파싱·정규화한 선행 슬라이스가 있다. `exit=0`인 타이밍 위반도 execution status(실행 상태)는 성공이고 check status(검사 상태)는 실패로 보존한다.
@@ -84,6 +90,29 @@ Run(작업) 상태는 `QUEUED → ACQUIRING → RUNNING → COLLECTING → PARSI
 
 재시도 횟수, backoff(후퇴 지연), timeout budget(시간 초과 예산)은 Run(작업) 명세에 기록하고 Attempt(실행 시도)마다 실제 값을 남긴다. `unknown execution outcome(알 수 없는 실행 결과)`는 성공도 재시도 가능도 아니다. 원인별 정책을 실제로 선택하기 전에는 `pending human decision(사람 결정 대기)`으로 남긴다.
 
+### EDA(전자 설계 자동화) 세부 실패 분류
+
+아래 분류는 위 공통 분류를 EDA(전자 설계 자동화) 입력·결과에 맞게 구체화하는 계획이다. 현재 구현이 모든 값을 발생·판정한다는 뜻이 아니다.
+
+| 범주 | failure class(실패 등급) | 기본 처리 | 재시도 금지 또는 manual intervention(수동 개입) 사유 |
+| --- | --- | --- | --- |
+| Execution Failure(실행 실패) | `TIMEOUT`, `PROCESS_CRASH`, `WORKER_LOST`, `CANCELLED` | 종료 확인 전에는 결과 미확정, 확인 뒤 정책 적용 | `PROCESS_CRASH`와 `WORKER_LOST`는 외부 실행 완료 여부가 불명확하면 자동 재시도 금지; `CANCELLED`는 사용자 의도를 존중 |
+| Input Failure(입력 실패) | `NETLIST_INVALID`, `LIBERTY_MISSING`, `SDC_INVALID`, `UNSUPPORTED_INPUT` | terminal failure(종단 실패) | 같은 입력을 반복해도 고쳐지지 않으므로 입력·지원 계약 수정 필요 |
+| Tool Failure(도구 실패) | `TOOL_EXIT_NONZERO`, `TOOL_VERSION_UNSUPPORTED` | terminal failure(종단 실패), 원시 진단 보존 | 보고서 내부 값으로 종료 실패를 덮어쓸 수 없음; 환경·버전 변경은 사람 검토 필요 |
+| Result Failure(결과 실패) | `REPORT_INCOMPLETE`, `PARSE_FAILED`, `SEMANTIC_INVALID` | 실행 상태와 분리하여 실패 또는 `UNKNOWN` 기록 | 반복 실행이 원문 누락·포맷·의미 오류를 해결하지 않음; parser(파서)·입력 계약 검토 필요 |
+| Infrastructure Failure(인프라 실패) | `DB_TRANSIENT_ERROR`, `QUEUE_UNAVAILABLE`, `STORAGE_UNAVAILABLE` | durable write(지속 쓰기)·외부 실행 여부를 분리해 복구 판단 | 실행 전에 발생했거나, 실행 종료·산출물 보존을 독립적으로 확인할 때만 제한 재시도 후보 |
+
+### Retry(재시도) 대안과 판별 기준
+
+| 대안 | 장점 | 위험 | 채택 전 판별 지표 |
+| --- | --- | --- | --- |
+| no retry(재시도 없음) | 중복 외부 실행과 자원 낭비가 가장 작음 | 일시적 장애를 회복하지 못함 | 완료율, 수동 재제출 수 |
+| fixed retry(고정 재시도) | 구현·설명이 단순함 | 장애 지속 시 같은 간격의 재시도 폭주 | retry storm(재시도 폭주), 총 완료 지연 |
+| bounded retry(제한된 재시도) | 횟수·예산을 명시해 회복과 비용을 제한 | 적정 횟수는 workload(작업부하) 의존 | 일시적 장애 회복률, attempt count(실행 시도 수), 자원 점유 |
+| exponential backoff(지수 백오프) | 지속 장애에서 재시도 압력을 낮춤 | 총 완료 지연과 정책 복잡성 증가 | total completion latency(전체 완료 지연), 대기열 연령, 실패율 |
+
+Baseline(기준선)은 현재 no retry(재시도 없음) 또는 기존 제한 재시도 동작을 정확히 기록한 뒤 정한다. Challenger(도전 대안)는 하나만 선택한다. 동일한 장애 주입과 자원 한도에서 일시적 장애 회복률, 중복 실행 위험, CPU(중앙 처리 장치)·Memory(메모리)·license/slot(라이선스/슬롯) 낭비, total completion latency(전체 완료 지연), retry storm(재시도 폭주)을 비교하고 결과 전 adoption gate(채택 기준)를 기록한다.
+
 ## 6. timeout(시간 초과)·cancel(취소)·subprocess lifecycle(하위 프로세스 수명주기)
 
 단계별 deadline(마감 시각)은 `acquire(획득)`, `execute(실행)`, `collect(수집)`, `parse(파싱)`에 분리한다. 호출자 HTTP timeout(HTTP 시간 초과)은 관측자 시간 제한일 뿐 실행 중단 증거가 아니다.
@@ -108,6 +137,8 @@ reconciler(조정기)는 다음 순서로만 동작한다.
 
 첫 실험은 single worker restart(단일 작업자 재시작)만 포함한다. 두 독립 worker(작업자)가 같은 외부 도구 자원을 동시에 소유하는 상황과 network partition(네트워크 분할)은 후속 증거 없이는 범위 밖이다.
 
+대표 stale RUNNING(오래된 실행 중) 흐름은 `RUNNING → heartbeat(심장박동) 중단 → lease(임대) 만료 → WORKER_LOST(작업자 손실) 판정 → retryable(재시도 가능) 여부 판정 → 새 Attempt(실행 시도) 또는 terminal failure(종단 실패)`다. heartbeat interval(심장박동 간격)이 짧으면 탐지는 빨라지지만 DB write(데이터베이스 쓰기)와 관측 비용이 증가한다. 길면 비용은 줄지만 recovery time(복구 시간)이 늘어난다. 간격·lease duration(임대 기간)은 production SLA(운영 서비스 수준 협약)로 추정하지 않고, 장애 주입에서 탐지 지연·쓰기량·잘못된 회수 여부를 측정해 선택한다.
+
 ## 8. idempotency(멱등성)와 duplicate delivery(중복 전달)
 
 - submit idempotency(제출 멱등성): `client key + canonical spec hash(정규 명세 해시)`가 하나의 Run(작업)을 식별한다. 같은 키에 다른 명세는 명시 충돌이다.
@@ -126,6 +157,10 @@ reconciler(조정기)는 다음 순서로만 동작한다.
 - backpressure(역압)는 새 Run(작업)을 무한히 메모리에 쌓지 않고, 명시 대기·거절·클라이언트 재시도 시각을 반환하는 정책이다.
 - 측정 전에는 실제 라이선스 수나 적정 worker count(작업자 수)를 가정하지 않는다. 초기 한도는 1이고, 증거가 있을 때만 하나씩 올린다.
 
+동시 실행 수는 1/2/4/8처럼 bounded value(제한된 값)만 비교한다. 같은 OpenSTA(정적 타이밍 분석 도구) workload(작업부하)와 입력 혼합에서 queue wait(대기열 대기), execution latency(실행 지연), end-to-end latency(종단 간 지연), throughput(처리량), CPU(중앙 처리 장치), Memory(메모리), timeout rate(시간 초과율), failure rate(실패율), 실제 overlap(동시 실행 겹침)을 측정한다. saturation point(포화 지점)는 처리량 증가가 멈추거나 지연·시간 초과·실패가 허용한 실험 기준보다 악화되는 최초의 값으로 정의하며, 이것이 선택한 동시 실행 수의 근거가 된다.
+
+FastAPI(파이썬 웹 프레임워크) async endpoint(비동기 종단점) 또는 다른 API(응용 프로그래밍 인터페이스) 비동기 처리는 요청 수락·DB(데이터베이스)·네트워크 대기에 유용할 수 있다. 그러나 OpenSTA(정적 타이밍 분석 도구)의 CPU(중앙 처리 장치)·subprocess(하위 프로세스) 실행을 자동으로 빠르게 만들지 않으며, 별도의 worker(작업자)·resource policy(자원 정책)·admission control(입장 제어)이 필요하다.
+
 ## 10. trace(추적)와 provenance(출처 추적)
 
 각 Run(작업)과 Attempt(실행 시도)는 correlation ID(상관 식별자)로 API(응용 프로그래밍 인터페이스) 요청, 스케줄, lease(임대), 하위 프로세스, artifact(산출물), parser(파서), checker(검사기), reconciliation(조정) 기록을 연결한다.
@@ -138,6 +173,8 @@ reconciler(조정기)는 다음 순서로만 동작한다.
 - execution/parse/check status(실행/파싱/검사 상태), completeness(완전성), failure class(실패 등급), retry decision(재시도 결정), 모든 상태 전이 시각과 actor(행위자).
 
 민감한 license path(라이선스 경로), 환경 변수 값, 비밀값은 원문으로 보존하지 않는다. `tool_generated(도구 생성)` 결과와 fixture(고정 입력) 재생을 같은 실제 실행 증거로 표시하지 않는다.
+
+Trace(추적)는 관측 장식이 아니라 병목·실패 원인·before/after(변경 전/후) 검증의 evidence(근거)다. 최소 경로는 `API(응용 프로그래밍 인터페이스) → queue wait(대기열 대기) → worker setup(작업자 설정) → Yosys(합성 도구, 선택적 fixture 생성) → OpenSTA(정적 타이밍 분석 도구) → parser(파서) → validator(검증기) → DB persist(데이터베이스 저장) → event publish(이벤트 발행, 채택된 경우)`로 잇는다. 각 span(구간)은 run ID(작업 식별자), attempt ID(실행 시도 식별자), duration(소요 시간), status(상태), error class(오류 등급), worker ID(작업자 식별자), tool version(도구 버전)을 연결한다. Redis Pub/Sub(레디스 발행/구독)은 이벤트 발행이 실제로 채택된 경우에만 이 경로에 넣으며, 기본 구성으로 가정하지 않는다.
 
 ## 11. alternatives(대안)와 trade-off(상충관계)
 
@@ -196,10 +233,11 @@ Kafka(카프카) 평가를 열 경우에도 retention window(보존 기간), con
 - 실제 OpenSTA(정적 타이밍 분석 도구)가 가능한 runner(실행기)에서는 고정 workload(작업부하)의 integration/fault-injection test(통합/장애 주입 테스트)를 별도 명시 job(작업)으로 실행한다. 도구가 없는 runner(실행기)는 허위 통과로 대체하지 않고 `not run(미실행)` 이유를 기록한다.
 - schema migration(스키마 마이그레이션), 조건부 종단 전이, provenance(출처 추적) 필수 필드, normal/tight 결과 구분은 계약 위반 시 병합을 막는다.
 - artifact(산출물) hash(해시)와 fixture/tool-generated(고정 입력/도구 생성) 출처 표기가 바뀌면 재검증을 요구한다.
+- Docker build(도커 빌드), migration test(마이그레이션 테스트), PostgreSQL/Redis/worker integration(포스트그레스큐엘/레디스/작업자 통합)은 해당 구성 요소를 adoption gate(채택 기준) 뒤 실제로 선택한 경우에만 CI(지속적 통합) 관문에 추가한다. 선택하지 않은 구성의 미실행을 통과로 위장하지 않는다.
 
 ### 운영·배포 검증
 
-배포 전에는 단일 canary(카나리) Run(작업)으로 정상·타이밍 위반·시간 초과/취소 중 승인된 사례를 실행하고, 로그만이 아니라 durable state(지속 상태), lease release(임대 반납), artifact linkage(산출물 연결), retry/reconciliation(재시도/조정) 이력을 확인한다. rollback(되돌리기) 기준은 정상 실행이 성공으로 보존되지 않음, 실패가 성공으로 승격됨, lease(임대)·자원 누수, provenance(출처 추적) 누락이다. 실제 배포는 별도 승인 없이는 수행하지 않는다.
+배포 전에는 단일 canary(카나리) Run(작업)으로 정상·타이밍 위반·시간 초과/취소 중 승인된 사례를 실행하고, 로그만이 아니라 durable state(지속 상태), lease release(임대 반납), artifact linkage(산출물 연결), retry/reconciliation(재시도/조정) 이력을 확인한다. staging(스테이징) 또는 배포 환경에서 worker restart/recovery smoke(작업자 재시작/복구 간이 검증)는 실제 worker(작업자) 실행을 선택했을 때만 수행한다. rollback(되돌리기) 기준은 정상 실행이 성공으로 보존되지 않음, 실패가 성공으로 승격됨, lease(임대)·자원 누수, provenance(출처 추적) 누락이다. 실제 배포는 별도 승인 없이는 수행하지 않는다.
 
 ## 16. Falsification(반증)과 Stop condition(종료 조건)
 
