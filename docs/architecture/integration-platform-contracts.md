@@ -34,6 +34,8 @@ Qualitas 공식 자료가 PCIe Gen4~6 PHY, UCIe 2.0, SERDES, MIPI C/D-PHY와 BIS
 
 ## 공통 계약
 
+아래 `ExternalAdapter`는 Stage 4에 도입할 목표 계약이다. 현재 Stage 1~3 코드는 `SyntheticTimingAdapter.run()`과 `JobService`의 in-process resource semaphore까지만 구현했으며, 실제 `acquire/collect/release` 객체와 Trace32/Aardvark SDK adapter는 아직 구현하지 않았다.
+
 ```python
 class ExternalAdapter(Protocol):
     def acquire(self, spec: JobSpec) -> Lease: ...
@@ -123,7 +125,8 @@ fixture는 다음 필드를 포함한다.
 
 fixture 테스트가 증명하는 것:
 
-- 상태 전이, retry, timeout, lease release, parser와 DB 계약
+- 현재 구현: 상태 전이, retry, timeout, in-process resource slot, parser와 DB 계약
+- Stage 4 목표: 실제 lease acquire/release와 adapter cleanup 계약
 
 fixture 테스트가 증명하지 않는 것:
 
@@ -137,3 +140,9 @@ fixture 테스트가 증명하지 않는 것:
 - 장비 lease timeout과 장애 시 release 확인
 - fixture 결과와 real 결과의 provenance 분리
 - real run은 처음부터 1개 장비·1개 IP·1개 flow로 제한
+
+## 현재 구현과 미구현
+
+- 구현됨: synthetic report 생성, 결측·timeout·transport fixture, bounded retry, attempt 기록, in-process resource slot, SQLite 저장, 100개 혼합 workload 측정
+- 미구현: streaming/chunk parser, 대형 metric row batch insert, 복잡한 DB query benchmark, durable queue, 프로세스 재시작 복구, real Trace32/Aardvark adapter
+- 따라서 Stage 3 결과는 artifact 크기와 자원 경합을 포함한 synthetic 기준선이며, 대형 parser/DB 조회 성능의 실측 결과가 아니다.
