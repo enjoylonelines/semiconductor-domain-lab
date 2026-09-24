@@ -143,6 +143,6 @@ fixture 테스트가 증명하지 않는 것:
 
 ## 현재 구현과 미구현
 
-- 구현됨: synthetic report 생성, 결측·timeout·transport fixture, bounded retry, attempt 기록, in-process resource slot, SQLite 저장, 100개 혼합 workload 측정, streaming parser, metric row batch insert/query benchmark, `FixtureTrace32Adapter`·`FixtureAardvarkAdapter`·`FixtureEdaAdapter`의 공통 lifecycle 계약 테스트, SDK client를 주입하는 `RealTrace32Adapter`·`RealAardvarkAdapter` 경계 테스트
-- 미구현: 실제 Lauterbach/Total Phase SDK 호출, durable queue, 프로세스 재시작 복구
+- 구현됨: synthetic report 생성, 결측·timeout·transport fixture, bounded retry, attempt 기록, in-process resource slot, SQLite 저장, 100개 혼합 workload 측정, streaming parser, metric row batch insert/query benchmark, `FixtureTrace32Adapter`·`FixtureAardvarkAdapter`·`FixtureEdaAdapter`의 공통 lifecycle 계약 테스트, SDK client를 주입하는 `RealTrace32Adapter`·`RealAardvarkAdapter` 경계 테스트, `t32rem` subprocess와 Aardvark Python binding wrapper
+- 미구현: 실제 Lauterbach/Total Phase SDK·장비 호출, durable queue, 프로세스 재시작 복구
 - 따라서 Stage 3 결과는 artifact 크기와 자원 경합을 포함한 synthetic 기준선이며, 대형 parser/DB 조회 성능의 실측 결과가 아니다.
