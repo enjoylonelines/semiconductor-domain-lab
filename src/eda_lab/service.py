@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
+from threading import BoundedSemaphore, Lock
 import time
 from .models import JobSpec
 from .parser import parse_report
@@ -8,11 +8,12 @@ from .store import Store
 
 
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
         self.retry_delay_seconds = retry_delay_seconds
+        self.resource_slots = BoundedSemaphore(resource_slots) if resource_slots else None
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.lock = Lock()
         self.futures = {}
@@ -38,7 +39,11 @@ class JobService:
     def _execute(self, spec: JobSpec) -> None:
         self.store.update_run(spec.job_id, status="RUNNING")
         for attempt_no in range(1, self.max_attempts + 1):
+            acquired = False
             try:
+                if self.resource_slots:
+                    self.resource_slots.acquire()
+                    acquired = True
                 artifact = self.adapter.run(spec)
                 result = parse_report(artifact)
                 if result.parse_status == "INVALID":
@@ -62,6 +67,9 @@ class JobService:
                 self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="execution_error", error=str(exc))
                 self.store.update_run(spec.job_id, status="FAILED", error=str(exc))
                 return
+            finally:
+                if acquired:
+                    self.resource_slots.release()
 
     def get(self, job_id: str) -> dict | None:
         return self.store.get_run(job_id)

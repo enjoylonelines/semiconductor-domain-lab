@@ -7,8 +7,9 @@ from .models import JobSpec
 class SyntheticTimingAdapter:
     """EDA-like adapter with explicit fixture profiles; never represents real tool output."""
 
-    def __init__(self, profile: str = "normal"):
+    def __init__(self, profile: str = "normal", artifact_bytes: int = 0):
         self.profile = profile
+        self.artifact_bytes = artifact_bytes
 
     def run(self, spec: JobSpec) -> Path:
         if self.profile == "timeout":
@@ -36,5 +37,8 @@ class SyntheticTimingAdapter:
             fields[-1] = f"worst_slack={spec.worst_slack} cycles"
         elif self.profile != "normal":
             raise ValueError(f"unknown synthetic fixture profile: {self.profile}")
-        report.write_text("\n".join(fields) + "\n", encoding="utf-8")
+        payload = "\n".join(fields) + "\n"
+        if self.artifact_bytes > len(payload):
+            payload += "# synthetic artifact padding\n" + "x" * (self.artifact_bytes - len(payload))
+        report.write_text(payload, encoding="utf-8")
         return report
