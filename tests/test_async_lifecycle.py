@@ -97,7 +97,7 @@ class AsyncLifecycleTests(unittest.TestCase):
 
     def test_post_artifact_worker_interruption_is_recoverable_without_success(self):
         clock = [100.0]
-        service = JobService(Store(now=lambda: clock[0]), max_workers=1, max_attempts=1)
+        service = JobService(Store(now=lambda: clock[0]), max_workers=1, max_attempts=1, lease_seconds=0)
         with patch("eda_lab.service.parse_report", side_effect=SystemExit("injected after artifact return")):
             service.submit(spec("post-artifact-interruption"))
             with self.assertRaises(SystemExit):
@@ -118,6 +118,18 @@ class AsyncLifecycleTests(unittest.TestCase):
         self.assertEqual(recovered["attempts"][-1]["status"], "ABANDONED")
         self.assertEqual(recovered["attempts"][-1]["error_type"], "worker_unavailable")
         self.assertEqual(recovered["attempts"][-1]["retry_class"], "recovery_required")
+
+    def test_nonlive_stale_run_with_an_active_lease_is_not_reconciled(self):
+        clock = [100.0]
+        store = Store(now=lambda: clock[0])
+        store.create_run("active-lease", "design-a", "PCIe", "synthetic-timing")
+        store.update_run("active-lease", status="RUNNING")
+        store.record_attempt("active-lease", 1, "RUNNING", retry_class="not_classified")
+        store.acquire_attempt_lease("active-lease", 1, "worker-a", "token-a", 10)
+        clock[0] = 101.0
+        outcome = JobService(store, max_workers=1).recover_stale_runs(stale_after_seconds=0)
+        self.assertEqual(outcome, {"recovered": [], "skipped_live": [], "skipped_active_lease": ["active-lease"]})
+        self.assertEqual(store.get_run("active-lease")["status"], "RUNNING")
 
     def test_stale_database_record_is_not_recovered_while_worker_is_live(self):
         clock = [100.0]
@@ -147,6 +159,18 @@ class AsyncLifecycleTests(unittest.TestCase):
         self.assertIsNone(service.get("budget-rejected"))
         adapter.release.set()
         service.futures["budget-first"].result(timeout=2)
+
+    def test_running_attempt_refreshes_heartbeat_before_adapter_returns(self):
+        adapter = BlockingAdapter()
+        service = JobService(Store(), max_workers=1, max_attempts=1, adapter=adapter, lease_seconds=0.03)
+        service.submit(spec("heartbeat-live"))
+        self.assertTrue(adapter.started.wait(timeout=1))
+        first = service.get("heartbeat-live")["attempts"][-1]["heartbeat_at"]
+        time.sleep(0.05)
+        refreshed = service.get("heartbeat-live")["attempts"][-1]["heartbeat_at"]
+        self.assertGreater(refreshed, first)
+        adapter.release.set()
+        service.futures["heartbeat-live"].result(timeout=2)
 
 
 class OpenStaSubprocessAdapterTests(unittest.TestCase):

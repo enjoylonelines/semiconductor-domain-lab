@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import BoundedSemaphore, Lock
+from threading import BoundedSemaphore, Event, Lock, Thread
 import time
 from uuid import uuid4
 from .models import AdapterRunResult, JobSpec
@@ -78,11 +78,19 @@ class JobService:
             cancel_adapter = getattr(self.adapter, "cancel", None)
             return bool(callable(cancel_adapter) and cancel_adapter(job_id))
 
+    def _heartbeat_loop(self, stop: Event, job_id: str, attempt_no: int, lease_token: str) -> None:
+        interval = max(self.lease_seconds / 3, 0.01)
+        while not stop.wait(interval):
+            if not self.store.heartbeat_attempt(job_id, attempt_no, lease_token, self.lease_seconds):
+                return
+
     def _execute(self, spec: JobSpec) -> None:
         self.store.update_run(spec.job_id, status="RUNNING")
         for attempt_no in range(1, self.max_attempts + 1):
             acquired = False
             lease_token = None
+            heartbeat_stop = None
+            heartbeat_thread = None
             try:
                 # Persist this boundary before adapter execution. An interruption after an
                 # artifact is emitted can then be reconciled without inventing success.
@@ -90,6 +98,11 @@ class JobService:
                 lease_token = uuid4().hex
                 if not self.store.acquire_attempt_lease(spec.job_id, attempt_no, self.worker_id, lease_token, self.lease_seconds):
                     raise RuntimeError("attempt lease acquisition failed")
+                heartbeat_stop = Event()
+                heartbeat_thread = Thread(
+                    target=self._heartbeat_loop, args=(heartbeat_stop, spec.job_id, attempt_no, lease_token), daemon=True
+                )
+                heartbeat_thread.start()
                 if self.resource_slots:
                     self.resource_slots.acquire()
                     acquired = True
@@ -160,6 +173,10 @@ class JobService:
                 self.store.update_run(spec.job_id, status="FAILED", error=str(exc))
                 return
             finally:
+                if heartbeat_stop is not None:
+                    heartbeat_stop.set()
+                if heartbeat_thread is not None:
+                    heartbeat_thread.join(timeout=1)
                 if acquired:
                     self.resource_slots.release()
 
@@ -171,6 +188,8 @@ class JobService:
         cutoff = self.store.now() - stale_after_seconds
         recovered: list[str] = []
         skipped_live: list[str] = []
+        skipped_active_lease: list[str] = []
+        expired_leases = set(self.store.list_expired_leased_attempts())
         for run in self.store.list_stale_running(cutoff):
             future = self.futures.get(run["job_id"])
             # A caller-side timeout does not establish that an adapter child has stopped.
@@ -178,6 +197,9 @@ class JobService:
                 skipped_live.append(run["job_id"])
                 continue
             attempts = run["attempts"]
+            if attempts and attempts[-1]["lease_token"] and (run["job_id"], attempts[-1]["attempt_no"]) not in expired_leases:
+                skipped_active_lease.append(run["job_id"])
+                continue
             if attempts and attempts[-1]["status"] == "RUNNING":
                 self.store.record_attempt(
                     run["job_id"], attempts[-1]["attempt_no"], "ABANDONED",
@@ -186,4 +208,7 @@ class JobService:
                 )
             self.store.update_run(run["job_id"], status="FAILED", error="recovery: stale RUNNING record without live worker")
             recovered.append(run["job_id"])
-        return {"recovered": recovered, "skipped_live": skipped_live}
+        result = {"recovered": recovered, "skipped_live": skipped_live}
+        if skipped_active_lease:
+            result["skipped_active_lease"] = skipped_active_lease
+        return result

@@ -65,6 +65,8 @@ Focused fault-injection tests(집중 장애 주입 테스트) establish that a w
 
 The full suite(전체 묶음) now has 40 passing tests(통과 테스트). This does not prove restart-safe fencing(재시작 안전 차단), periodic heartbeat(주기적 심장박동) during a long-running child process(장시간 하위 프로세스), multi-host ownership(다중 호스트 소유권), or automatic retry(자동 재시도) for an abandoned attempt(포기된 실행 시도).
 
+The worker(작업자) now starts a periodic heartbeat(주기적 심장박동) loop while adapter execution(어댑터 실행) is active and stops it before terminal persistence(종단 저장). Reconciliation(조정) requires both a non-live local worker(비활성 로컬 작업자) and an expired lease(만료 임대); a stale timestamp(오래된 시각) with an active lease(유효 임대) remains `RUNNING`. Focused regression tests(집중 회귀 테스트) cover heartbeat refresh(심장박동 갱신), active-lease refusal(유효 임대 거부), and expired-lease recovery(만료 임대 복구). The full suite(전체 묶음) then passed 44 tests(테스트).
+
 ## Bounded concurrency probe(제한된 동시성 탐침)
 
 The fixed normal OpenSTA workload(고정 정상 OpenSTA 작업부하) was run once at each concurrent child count(동시 하위 프로세스 수). All runs exited `0`; the process intervals(프로세스 구간) overlapped for the multi-child cases(다중 하위 프로세스 경우).
