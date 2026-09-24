@@ -5,7 +5,25 @@ from eda_lab.adapters import (
     FixtureAardvarkAdapter,
     FixtureEdaAdapter,
     FixtureTrace32Adapter,
+    RealAardvarkAdapter,
+    RealTrace32Adapter,
 )
+
+
+class FakeTrace32Client:
+    def __init__(self):
+        self.calls = []
+    def connect(self, endpoint): self.calls.append(("connect", endpoint))
+    def command(self, command): self.calls.append(("command", command)); return "OK"
+    def close(self): self.calls.append(("close",))
+
+
+class FakeAardvarkClient:
+    def __init__(self):
+        self.calls = []
+    def open(self, device_id): self.calls.append(("open", device_id))
+    def transfer(self, transaction): self.calls.append(("transfer", transaction)); return "aabb"
+    def close(self): self.calls.append(("close",))
 
 
 class AdapterContractTests(unittest.TestCase):
@@ -27,6 +45,24 @@ class AdapterContractTests(unittest.TestCase):
         adapter.release(lease)
         next_lease = adapter.acquire({"job_id": "second"})
         adapter.release(next_lease)
+
+    def test_injected_real_clients_map_calls_and_mark_real_source(self):
+        trace_client = FakeTrace32Client()
+        trace = RealTrace32Adapter(trace_client, "t32-real-contract")
+        trace_artifact = trace.run({"job_id": "t32", "endpoint": "127.0.0.1", "commands": ["Data.List"]})
+        self.assertEqual(trace_artifact.source_kind, "real")
+        self.assertEqual(trace_client.calls, [("connect", "127.0.0.1"), ("command", "Data.List"), ("close",)])
+
+        aardvark_client = FakeAardvarkClient()
+        aardvark = RealAardvarkAdapter(aardvark_client, "aa-real-contract")
+        aardvark_artifact = aardvark.run({"job_id": "aa", "device_id": 3, "transactions": [{"bus": "I2C", "address": "0x50"}]})
+        self.assertEqual(aardvark_artifact.source_kind, "real")
+        self.assertEqual(aardvark_client.calls[0], ("open", 3))
+        self.assertEqual(aardvark_client.calls[-1], ("close",))
+
+    def test_real_adapter_without_client_fails_explicitly(self):
+        with self.assertRaisesRegex(RuntimeError, "configuration_error"):
+            RealTrace32Adapter().run({"job_id": "missing"})
 
     def test_timeout_releases_resource(self):
         adapter = FixtureAardvarkAdapter("aa-timeout")

@@ -132,3 +132,69 @@ class FixtureEdaAdapter(FixtureAdapter):
             "exit_code": spec.get("exit_code", 0),
             "report_names": spec.get("report_names", ["timing.report"]),
         }
+
+
+class RealTrace32Adapter(FixtureAdapter):
+    """TRACE32 boundary; the concrete Lauterbach client is injected by deployment."""
+
+    adapter_name = "trace32"
+
+    def __init__(self, client=None, resource_key: str = "trace32-target"):
+        super().__init__(resource_key)
+        self.client = client
+
+    def acquire(self, spec: dict[str, Any]) -> Lease:
+        if self.client is None:
+            raise RuntimeError("configuration_error: TRACE32 client is not configured")
+        lease = super().acquire(spec)
+        try:
+            self.client.connect(spec.get("endpoint"))
+            return lease
+        except Exception:
+            super().release(lease)
+            raise
+
+    def execute(self, lease: Lease, spec: dict[str, Any]) -> RawResult:
+        commands = spec.get("commands", [])
+        responses = [self.client.command(command) for command in commands]
+        return RawResult("real", self.adapter_name, "SUCCEEDED", "OK", {"job_id": spec["job_id"], "responses": responses})
+
+    def release(self, lease: Lease) -> None:
+        try:
+            if self.client is not None:
+                self.client.close()
+        finally:
+            super().release(lease)
+
+
+class RealAardvarkAdapter(FixtureAdapter):
+    """Aardvark boundary; the concrete Total Phase client is injected by deployment."""
+
+    adapter_name = "aardvark"
+
+    def __init__(self, client=None, resource_key: str = "aardvark-device"):
+        super().__init__(resource_key)
+        self.client = client
+
+    def acquire(self, spec: dict[str, Any]) -> Lease:
+        if self.client is None:
+            raise RuntimeError("configuration_error: Aardvark client is not configured")
+        lease = super().acquire(spec)
+        try:
+            self.client.open(spec.get("device_id"))
+            return lease
+        except Exception:
+            super().release(lease)
+            raise
+
+    def execute(self, lease: Lease, spec: dict[str, Any]) -> RawResult:
+        transactions = spec.get("transactions", [])
+        responses = [self.client.transfer(transaction) for transaction in transactions]
+        return RawResult("real", self.adapter_name, "SUCCEEDED", "OK", {"job_id": spec["job_id"], "responses": responses})
+
+    def release(self, lease: Lease) -> None:
+        try:
+            if self.client is not None:
+                self.client.close()
+        finally:
+            super().release(lease)
