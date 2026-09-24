@@ -1,4 +1,5 @@
 import threading
+import time
 import shutil
 import tempfile
 import unittest
@@ -155,6 +156,8 @@ class OpenStaSubprocessAdapterTests(unittest.TestCase):
 
         self.assertEqual(result.process_exit_code, 0)
         self.assertIn("EDA_LAB_REPORT_END", result.artifact_path.read_text(encoding="utf-8"))
+        self.assertEqual(result.execution_provenance["command_template_id"], "opensta-fixed-fixture-v1")
+        self.assertEqual(len(result.execution_provenance["sdc_sha256"]), 64)
 
     @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
     def test_timeout_terminates_a_real_opensta_child_before_the_report_finishes(self):
@@ -201,6 +204,28 @@ class OpenStaSubprocessAdapterTests(unittest.TestCase):
             self.assertEqual(result["status"], "TIMED_OUT")
             self.assertEqual(result["trust_status"], "INVALID")
             self.assertEqual(result["attempts"][-1]["error_type"], "timeout")
+
+    @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
+    def test_running_real_opensta_child_can_be_cancelled_without_success(self):
+        with tempfile.TemporaryDirectory(prefix="eda-opensta-cancel-service-") as directory_name:
+            fixture_dir = Path(directory_name)
+            for name in ("tiny_mapped.v", "normal.sdc"):
+                shutil.copy2(self.fixture_dir / name, fixture_dir / name)
+            (fixture_dir / "delayed.tcl").write_text(
+                "after 1000\n" + (self.fixture_dir / "run.tcl").read_text(encoding="utf-8"), encoding="utf-8"
+            )
+            adapter = OpenStaSubprocessAdapter(sta_path=self.sta_path, liberty_path=self.liberty_path,
+                                               fixture_dir=fixture_dir, script_name="delayed.tcl", timeout_seconds=5)
+            service = JobService(Store(), max_workers=1, max_attempts=1, adapter=adapter)
+            service.submit(spec("real-opensta-cancel"))
+            deadline = time.monotonic() + 1
+            while "real-opensta-cancel" not in adapter._processes and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertTrue(service.cancel("real-opensta-cancel"))
+            service.futures["real-opensta-cancel"].result(timeout=2)
+            result = service.get("real-opensta-cancel")
+            self.assertEqual(result["status"], "CANCELLED")
+            self.assertEqual(result["attempts"][-1]["error_type"], "cancelled")
 
 
 if __name__ == "__main__":

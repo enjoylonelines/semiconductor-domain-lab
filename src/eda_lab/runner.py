@@ -1,10 +1,16 @@
 import os
+import hashlib
 import shutil
 import subprocess
 import tempfile
 import time
 from pathlib import Path
+from threading import Lock
 from .models import AdapterRunResult, JobSpec
+
+
+class AdapterCancelledError(Exception):
+    """The adapter observed an explicit cancellation of its child process."""
 
 
 class SyntheticTimingAdapter:
@@ -68,12 +74,28 @@ class OpenStaSubprocessAdapter:
         self.script_name = script_name
         self.timeout_seconds = timeout_seconds
         self.termination_grace_seconds = termination_grace_seconds
+        self._processes: dict[str, subprocess.Popen] = {}
+        self._cancelled_jobs: set[str] = set()
+        self._lock = Lock()
+
+    def cancel(self, job_id: str) -> bool:
+        with self._lock:
+            process = self._processes.get(job_id)
+            if process is None or process.poll() is not None:
+                return False
+            self._cancelled_jobs.add(job_id)
+            process.terminate()
+            return True
 
     def _required_fixture(self, name: str) -> Path:
         path = self.fixture_dir / name
         if not path.is_file():
             raise FileNotFoundError(f"required OpenSTA fixture is missing: {path}")
         return path
+
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def run(self, spec: JobSpec) -> AdapterRunResult:
         if not self.sta_path.is_file():
@@ -101,6 +123,8 @@ class OpenStaSubprocessAdapter:
             stderr=subprocess.PIPE,
             text=True,
         )
+        with self._lock:
+            self._processes[spec.job_id] = process
         try:
             stdout, stderr = process.communicate(timeout=self.timeout_seconds)
         except subprocess.TimeoutExpired:
@@ -117,8 +141,26 @@ class OpenStaSubprocessAdapter:
             raise TimeoutError(
                 f"OpenSTA timed out after {self.timeout_seconds}s; pid={process.pid}; termination={termination}"
             )
+        finally:
+            with self._lock:
+                self._processes.pop(spec.job_id, None)
+
+        with self._lock:
+            cancelled = spec.job_id in self._cancelled_jobs
+            self._cancelled_jobs.discard(spec.job_id)
+        if cancelled:
+            (directory / "timing.report").write_text(stdout or "", encoding="utf-8")
+            (directory / "stderr.log").write_text(stderr or "", encoding="utf-8")
+            raise AdapterCancelledError(f"OpenSTA cancellation observed; pid={process.pid}")
 
         report = directory / "timing.report"
         report.write_text(stdout, encoding="utf-8")
         (directory / "stderr.log").write_text(stderr, encoding="utf-8")
-        return AdapterRunResult(report, process_exit_code=process.returncode)
+        return AdapterRunResult(report, process_exit_code=process.returncode, execution_provenance={
+            "command_template_id": "opensta-fixed-fixture-v1",
+            "tool_path": str(self.sta_path),
+            "liberty_sha256": self._sha256(self.liberty_path),
+            "script_sha256": self._sha256(script),
+            "sdc_sha256": self._sha256(sdc),
+            "netlist_sha256": self._sha256(netlist),
+        })

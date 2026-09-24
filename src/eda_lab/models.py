@@ -31,3 +31,4 @@ class AdapterRunResult:
 
     artifact_path: Path
     process_exit_code: int | None
+    execution_provenance: dict[str, Any] | None = None

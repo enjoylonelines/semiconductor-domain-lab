@@ -4,7 +4,7 @@ import time
 from uuid import uuid4
 from .models import AdapterRunResult, JobSpec
 from .parser import parse_report
-from .runner import SyntheticTimingAdapter
+from .runner import AdapterCancelledError, SyntheticTimingAdapter
 from .store import Store
 
 
@@ -36,8 +36,8 @@ class JobService:
         return "UNKNOWN"
 
     @classmethod
-    def _validation_fields(cls, result, process_exit_code: int | None) -> dict:
-        provenance = {**(result.provenance or {}), "observed_process_exit_code": process_exit_code}
+    def _validation_fields(cls, result, process_exit_code: int | None, execution_provenance: dict | None = None) -> dict:
+        provenance = {**(execution_provenance or {}), **(result.provenance or {}), "observed_process_exit_code": process_exit_code}
         return {
             "parse_status": result.parse_status,
             "check_status": result.check_status,
@@ -61,10 +61,13 @@ class JobService:
     def cancel(self, job_id: str) -> bool:
         with self.lock:
             future = self.futures.get(job_id)
-            if future is None or not future.cancel():
+            if future is None:
                 return False
-            self.store.update_run(job_id, status="CANCELLED", error="cancelled before execution")
-            return True
+            if future.cancel():
+                self.store.update_run(job_id, status="CANCELLED", trust_status="INVALID", error="cancelled before execution")
+                return True
+            cancel_adapter = getattr(self.adapter, "cancel", None)
+            return bool(callable(cancel_adapter) and cancel_adapter(job_id))
 
     def _execute(self, spec: JobSpec) -> None:
         self.store.update_run(spec.job_id, status="RUNNING")
@@ -87,12 +90,14 @@ class JobService:
                 if isinstance(adapter_result, AdapterRunResult):
                     artifact = adapter_result.artifact_path
                     process_exit_code = adapter_result.process_exit_code
+                    execution_provenance = adapter_result.execution_provenance
                 else:
                     # Temporary diagnostic bridge: a bare path cannot prove execution success.
                     artifact = adapter_result
                     process_exit_code = None
+                    execution_provenance = None
                 result = parse_report(artifact)
-                validation_fields = self._validation_fields(result, process_exit_code)
+                validation_fields = self._validation_fields(result, process_exit_code, execution_provenance)
                 if result.parse_status == "INVALID":
                     self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact), retry_class="non_retryable")
                     self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error="; ".join(result.errors))
@@ -122,6 +127,10 @@ class JobService:
                 self.store.update_run(spec.job_id, status="SUCCEEDED", **validation_fields, artifact_path=str(artifact), error=None)
                 if result.metrics:
                     self.store.save_metrics(spec.job_id, result.metrics)
+                return
+            except AdapterCancelledError as exc:
+                self.store.record_attempt(spec.job_id, attempt_no, "CANCELLED", error_type="cancelled", error=str(exc), retry_class="non_retryable")
+                self.store.update_run(spec.job_id, status="CANCELLED", trust_status="INVALID", error=str(exc))
                 return
             except (TimeoutError, ConnectionError) as exc:
                 error_type = "timeout" if isinstance(exc, TimeoutError) else "transport_error"
