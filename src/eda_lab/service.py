@@ -84,6 +84,10 @@ class JobService:
             if not self.store.heartbeat_attempt(job_id, attempt_no, lease_token, self.lease_seconds):
                 return
 
+    def _transition_attempt(self, job_id: str, attempt_no: int, lease_token: str, status: str, **fields) -> None:
+        if not self.store.transition_attempt(job_id, attempt_no, lease_token, status, **fields):
+            raise RuntimeError("attempt terminal write lost its lease fence")
+
     def _execute(self, spec: JobSpec) -> None:
         self.store.update_run(spec.job_id, status="RUNNING")
         for attempt_no in range(1, self.max_attempts + 1):
@@ -121,42 +125,42 @@ class JobService:
                 result = parse_report(artifact)
                 validation_fields = self._validation_fields(result, process_exit_code, execution_provenance)
                 if result.parse_status == "INVALID":
-                    self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact), retry_class="non_retryable")
+                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact), retry_class="non_retryable")
                     self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error="; ".join(result.errors))
                     return
                 if result.semantic_status == "INVALID":
                     error = "; ".join(result.errors)
-                    self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="semantic_invalid", error=error, artifact_path=str(artifact), retry_class="non_retryable")
+                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="semantic_invalid", error=error, artifact_path=str(artifact), retry_class="non_retryable")
                     self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 if process_exit_code is None:
                     error = "execution_outcome_unknown: adapter returned artifact without process exit code"
-                    self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="execution_outcome_unknown", error=error, artifact_path=str(artifact), retry_class="non_retryable")
+                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="execution_outcome_unknown", error=error, artifact_path=str(artifact), retry_class="non_retryable")
                     self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 if process_exit_code != 0:
                     error = f"tool_exit: exit code {process_exit_code}"
-                    self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="tool_exit", error=error, artifact_path=str(artifact), retry_class="non_retryable")
+                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="tool_exit", error=error, artifact_path=str(artifact), retry_class="non_retryable")
                     self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
-                self.store.record_attempt(spec.job_id, attempt_no, "SUCCEEDED", artifact_path=str(artifact), retry_class="not_applicable")
+                self._transition_attempt(spec.job_id, attempt_no, lease_token, "SUCCEEDED", artifact_path=str(artifact), retry_class="not_applicable")
                 self.store.update_run(spec.job_id, status="SUCCEEDED", **validation_fields, artifact_path=str(artifact), error=None)
                 if result.metrics:
                     self.store.save_metrics(spec.job_id, result.metrics)
                 return
             except AdapterCancelledError as exc:
-                self.store.record_attempt(spec.job_id, attempt_no, "CANCELLED", error_type="cancelled", error=str(exc), retry_class="non_retryable")
+                self._transition_attempt(spec.job_id, attempt_no, lease_token, "CANCELLED", error_type="cancelled", error=str(exc), retry_class="non_retryable")
                 self.store.update_run(spec.job_id, status="CANCELLED", trust_status="INVALID", error=str(exc))
                 return
             except (TimeoutError, ConnectionError) as exc:
                 error_type = "timeout" if isinstance(exc, TimeoutError) else "transport_error"
-                self.store.record_attempt(spec.job_id, attempt_no, "RETRYABLE_FAILURE", error_type=error_type, error=str(exc), retry_class="retryable")
+                self._transition_attempt(spec.job_id, attempt_no, lease_token, "RETRYABLE_FAILURE", error_type=error_type, error=str(exc), retry_class="retryable")
                 if attempt_no < self.max_attempts:
                     time.sleep(self.retry_delay_seconds * attempt_no)
                     continue
@@ -169,7 +173,7 @@ class JobService:
                 )
                 return
             except Exception as exc:
-                self.store.record_attempt(spec.job_id, attempt_no, "FAILED", error_type="execution_error", error=str(exc), retry_class="non_retryable")
+                self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="execution_error", error=str(exc), retry_class="non_retryable")
                 self.store.update_run(spec.job_id, status="FAILED", error=str(exc))
                 return
             finally:

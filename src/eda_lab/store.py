@@ -175,6 +175,18 @@ class Store:
             self.connection.commit()
             return cursor.rowcount == 1
 
+    def transition_attempt(self, job_id: str, attempt_no: int, token: str, status: str, *, error_type: str | None = None,
+                           error: str | None = None, artifact_path: str | None = None, retry_class: str | None = None) -> bool:
+        """Fence terminal state changes to the lease token that owns this Attempt."""
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE attempts SET status = ?, error_type = ?, error = ?, artifact_path = COALESCE(?, artifact_path), "
+                "retry_class = ?, updated_at = ? WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_token = ?",
+                (status, error_type, error, artifact_path, retry_class, self._now(), job_id, attempt_no, token),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
     def list_expired_leased_attempts(self, now: float | None = None) -> list[tuple[str, int]]:
         cutoff = self._now() if now is None else now
         with self._lock:

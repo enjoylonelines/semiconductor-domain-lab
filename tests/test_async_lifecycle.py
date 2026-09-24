@@ -66,6 +66,15 @@ class AsyncLifecycleTests(unittest.TestCase):
         clock[0] = 102.0
 
         self.assertEqual(store.list_expired_leased_attempts(clock[0]), [("expired-lease", 1)])
+
+    def test_stale_lease_token_cannot_write_a_terminal_attempt(self):
+        store = Store()
+        store.create_run("fenced", "design-a", "PCIe", "synthetic-timing")
+        store.record_attempt("fenced", 1, "RUNNING", retry_class="not_classified")
+        self.assertTrue(store.acquire_attempt_lease("fenced", 1, "worker-a", "current-token", 10))
+        self.assertFalse(store.transition_attempt("fenced", 1, "stale-token", "SUCCEEDED"))
+        self.assertTrue(store.transition_attempt("fenced", 1, "current-token", "SUCCEEDED"))
+        self.assertEqual(store.get_run("fenced")["attempts"][-1]["status"], "SUCCEEDED")
     def test_retryable_timeout_keeps_numbered_history_then_succeeds(self):
         service = JobService(Store(), max_workers=1, max_attempts=2, retry_delay_seconds=0, adapter=SequenceAdapter())
         service.submit(spec("retry-then-success"))
