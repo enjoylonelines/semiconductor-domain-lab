@@ -44,7 +44,6 @@ class FixtureAdapter:
 
     adapter_name = "fixture"
     _locks: dict[str, threading.Lock] = {}
-    _quarantines: dict[str, str] = {}
     _locks_guard = threading.Lock()
 
     def __init__(self, resource_key: str = "fixture-resource"):
@@ -54,28 +53,10 @@ class FixtureAdapter:
 
     def acquire(self, spec: dict[str, Any]) -> Lease:
         owner_id = str(spec["job_id"])
-        with self._locks_guard:
-            reason = self._quarantines.get(self.resource_key)
-            if reason:
-                raise RuntimeError(f"resource_quarantined: {reason}")
-            lock = self._locks[self.resource_key]
-            if not lock.acquire(blocking=False):
-                raise RuntimeError("resource_unavailable")
+        lock = self._locks[self.resource_key]
+        if not lock.acquire(blocking=False):
+            raise RuntimeError("resource_unavailable")
         return Lease(self.resource_key, owner_id, time.time())
-
-    def quarantine(self, lease: Lease, reason: str) -> None:
-        if lease.resource_key != self.resource_key:
-            raise ValueError("lease does not belong to adapter resource")
-        if not reason:
-            raise ValueError("quarantine reason is required")
-        with self._locks_guard:
-            self._quarantines[self.resource_key] = reason
-
-    def clear_quarantine(self, *, operator_id: str, inspection_id: str) -> None:
-        if not operator_id or not inspection_id:
-            raise ValueError("operator_id and inspection_id are required")
-        with self._locks_guard:
-            self._quarantines.pop(self.resource_key, None)
 
     def execute(self, lease: Lease, spec: dict[str, Any]) -> RawResult:
         if lease.resource_key != self.resource_key:
@@ -175,16 +156,8 @@ class RealTrace32Adapter(FixtureAdapter):
 
     def execute(self, lease: Lease, spec: dict[str, Any]) -> RawResult:
         commands = spec.get("commands", [])
-        try:
-            responses = [self.client.command(command) for command in commands]
-        except Exception:
-            self._quarantine_unknown_destructive_outcome(lease, spec)
-            raise
+        responses = [self.client.command(command) for command in commands]
         return RawResult("real", self.adapter_name, "SUCCEEDED", "OK", {"job_id": spec["job_id"], "responses": responses})
-
-    def _quarantine_unknown_destructive_outcome(self, lease: Lease, spec: dict[str, Any]) -> None:
-        if spec.get("operation_kind", "read_only") == "destructive" and not spec.get("outcome_known", False):
-            self.quarantine(lease, "unknown_hardware_state")
 
     def release(self, lease: Lease) -> None:
         try:
@@ -216,16 +189,8 @@ class RealAardvarkAdapter(FixtureAdapter):
 
     def execute(self, lease: Lease, spec: dict[str, Any]) -> RawResult:
         transactions = spec.get("transactions", [])
-        try:
-            responses = [self.client.transfer(transaction) for transaction in transactions]
-        except Exception:
-            self._quarantine_unknown_destructive_outcome(lease, spec)
-            raise
+        responses = [self.client.transfer(transaction) for transaction in transactions]
         return RawResult("real", self.adapter_name, "SUCCEEDED", "OK", {"job_id": spec["job_id"], "responses": responses})
-
-    def _quarantine_unknown_destructive_outcome(self, lease: Lease, spec: dict[str, Any]) -> None:
-        if spec.get("operation_kind", "read_only") == "destructive" and not spec.get("outcome_known", False):
-            self.quarantine(lease, "unknown_hardware_state")
 
     def release(self, lease: Lease) -> None:
         try:

@@ -48,7 +48,7 @@ TRACE32(트레이스32)·Aardvark(아드바크) 같은 장비는 단순 CPU slot
 4. heartbeat(심장박동)는 worker(작업자) 생존만 뜻한다. device health(장치 상태)나 target execution(타깃 실행)을 증명하지 않으므로, completion(완료)에는 별도 readback/artifact(다시 읽기/산출물) 근거가 필요하다.
 5. raw transaction log(원시 트랜잭션 로그), device serial(장치 일련번호), board/firmware hash(보드/펌웨어 해시), command allowlist ID(명령 허용 목록 식별자), reset owner(리셋 소유자)를 provenance(출처 추적)에 남긴다. 비밀값·license path(라이선스 경로)는 남기지 않는다.
 
-현재 구현은 fixture(고정 입력)와 injected-client boundary(주입 클라이언트 경계)에서 독점 acquire/release(획득/반납), destructive operation(파괴적 작업)의 unknown outcome(불명확한 결과) 격리, operator_id/inspection_id(운영자 식별자/점검 식별자)를 요구하는 명시 해제를 검증한다. 이 식별자는 아직 durable audit/provenance record(영속 감사/출처 추적 기록)로 저장하지 않는다. 실제 장비 연결·전기적 상태·readback(다시 읽기)·operator recovery(운영자 복구)는 real hardware(실제 하드웨어) 사용 승인 뒤 한 장비·한 read-only smoke command(읽기 전용 간이 명령)로 시작한다.
+현재 구현은 fixture(고정 입력)와 injected-client boundary(주입 클라이언트 경계)에서 독점 acquire/release(획득/반납)만 검증했다. 실제 장비 연결·전기적 상태·quarantine(격리)·operator recovery(운영자 복구)는 real hardware(실제 하드웨어) 사용 승인 뒤 한 장비·한 read-only smoke command(읽기 전용 간이 명령)로 시작한다.
 
 ## Career OS(커리어 운영체제) 반영 시점
 
