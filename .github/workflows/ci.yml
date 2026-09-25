@@ -6,10 +6,15 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   contract:
     name: Unit, regression, and contract tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -22,9 +27,31 @@ jobs:
           echo "OpenSTA integration and fault-injection tests require the recorded local fixture."
           echo "ubuntu-latest has no /tmp/eda-opensta-20260924 fixture, so those tests are skipped, not treated as tool validation."
 
+  contract-retry-diagnostic:
+    name: Contract retry diagnostic
+    needs: contract
+    if: ${{ needs.contract.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Repeat failed contract gate once
+        id: retry
+        continue-on-error: true
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Record retry outcome without overriding the original failure
+        if: always()
+        run: |
+          echo "The original contract failure remains blocking."
+          echo "Diagnostic retry outcome: ${{ steps.retry.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+
   opensta-integration:
     name: Recorded OpenSTA integration and fault injection
     runs-on: [self-hosted, eda-opensta]
+    timeout-minutes: 15
     if: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
