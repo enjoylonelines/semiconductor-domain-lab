@@ -26,6 +26,12 @@ class FakeAardvarkClient:
     def close(self): self.calls.append(("close",))
 
 
+class FailingAardvarkClient(FakeAardvarkClient):
+    def transfer(self, transaction):
+        self.calls.append(("transfer", transaction))
+        raise ConnectionError("synthetic bus disconnect")
+
+
 class AdapterContractTests(unittest.TestCase):
     def test_all_fixture_adapters_follow_lifecycle_and_mark_provenance(self):
         adapters = [FixtureTrace32Adapter("t32-contract"), FixtureAardvarkAdapter("aa-contract"), FixtureEdaAdapter("eda-contract")]
@@ -70,6 +76,38 @@ class AdapterContractTests(unittest.TestCase):
             adapter.run({"job_id": "timeout", "profile": "timeout"})
         artifacts = adapter.run({"job_id": "after-timeout"})
         self.assertEqual(artifacts.source_kind, "fixture")
+
+    def test_unknown_destructive_hardware_outcome_quarantines_until_operator_clears_it(self):
+        client = FailingAardvarkClient()
+        adapter = RealAardvarkAdapter(client, "aa-unknown-outcome")
+        spec = {
+            "job_id": "flash-attempt",
+            "device_id": 3,
+            "operation_kind": "destructive",
+            "transactions": [{"write": "firmware"}],
+        }
+        with self.assertRaises(ConnectionError):
+            adapter.run(spec)
+
+        with self.assertRaisesRegex(RuntimeError, "resource_quarantined: unknown_hardware_state"):
+            adapter.acquire({"job_id": "next-attempt"})
+
+        adapter.clear_quarantine(operator_id="lab-operator", inspection_id="board-reset-42")
+        lease = adapter.acquire({"job_id": "after-inspection", "device_id": 3})
+        adapter.release(lease)
+
+    def test_read_only_transport_error_does_not_imply_destructive_unknown_state(self):
+        client = FailingAardvarkClient()
+        adapter = RealAardvarkAdapter(client, "aa-read-only-error")
+        with self.assertRaises(ConnectionError):
+            adapter.run({
+                "job_id": "read-attempt",
+                "device_id": 3,
+                "operation_kind": "read_only",
+                "transactions": [{"read": 4}],
+            })
+        lease = adapter.acquire({"job_id": "retry-after-transport", "device_id": 3})
+        adapter.release(lease)
 
 
 if __name__ == "__main__":
