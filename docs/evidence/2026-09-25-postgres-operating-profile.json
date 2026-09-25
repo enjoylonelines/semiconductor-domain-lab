@@ -1,0 +1,12 @@
+{
+  "budget": 8,
+  "duplicate_claims": ["created", "existing"],
+  "invalid_bulk_error": "NotNullViolation",
+  "owner_terminal_write": true,
+  "post_failure_finding_count": 0,
+  "scope": "two API submitters, two logical workers, central PostgreSQL contract store",
+  "stale_terminal_write": false,
+  "submit_latency_seconds": {"p50": 0.002721, "p95": 0.005593},
+  "synthetic": true,
+  "unique_claims": {"backpressured": 9, "created": 7}
+}

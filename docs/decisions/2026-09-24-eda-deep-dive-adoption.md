@@ -14,9 +14,11 @@
 
 ## Deferred(보류)
 
-Kafka(카프카), Redis(레디스), PostgreSQL(포스트그레스큐엘), partitioning(파티셔닝), distributed fencing(분산 차단), and materialization(사전 계산)은 현재 실제 한계 실험에서 필요성이 관측되지 않아 도입하지 않는다.
+Kafka(카프카), Redis(레디스), partitioning(파티셔닝), distributed fencing(분산 차단), and materialization(사전 계산)은 현재 실제 한계 실험에서 필요성이 관측되지 않아 도입하지 않는다. PostgreSQL(포스트그레스큐엘)은 central database(중앙 데이터베이스) 운영 후보로만 열려 있으며 아래 decision gate(결정 관문) 전에는 도입하지 않는다.
 
 SQLite(라이트급 SQL 저장소)는 운영 DB 채택 결론이 아니라 local validation profile(로컬 검증 프로필)의 선택이다. networked multi-worker operation(네트워크 다중 작업자 운영) 후보는 [운영 프로필 보정 계획](../plans/2026-09-25-operating-profile-correction.md)의 PostgreSQL challenger(포스트그레스큐엘 도전 대안) 비교와 Human Decision Gate(사람 결정 관문) 뒤에만 채택한다.
+
+전용 PostgreSQL 16 container(포스트그레스큐엘 16 컨테이너)에서 two API submitter(두 응용 프로그램 인터페이스 제출자), two worker connection(두 작업자 연결)의 duplicate claim(중복 권한), shared budget(공유 예산), stale token fence(오래된 토큰 차단), invalid bulk rollback(무효 대량 되돌리기)을 검증했다. [PostgreSQL 운영 후보 근거](../evidence/2026-09-25-postgres-operating-profile.md)는 네 상태 계약을 만족하지만 actual OpenSTA multi-host workload(실제 OpenSTA 다중 호스트 작업부하)나 운영 용량 근거는 아니다. 따라서 `PostgreSQL operational path candidate(포스트그레스큐엘 운영 경로 후보)`로 남기고 Human Decision Gate(사람 결정 관문)에서 채택 여부를 결정한다.
 
 ## Revalidation trigger(재검증 조건)
 

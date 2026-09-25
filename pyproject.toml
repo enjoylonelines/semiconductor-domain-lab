@@ -3,6 +3,9 @@ name = "semiconductor-domain-lab"
 version = "0.1.0"
 description = "Synthetic EDA workflow prototype"
 requires-python = ">=3.11"
+dependencies = [
+    "psycopg[binary]>=3.3.6",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
