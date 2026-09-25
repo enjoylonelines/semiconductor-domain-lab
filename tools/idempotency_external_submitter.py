@@ -32,6 +32,7 @@ def main() -> None:
     parser.add_argument("--result-file", required=True, type=Path)
     parser.add_argument("--child-pids", required=True, type=Path)
     parser.add_argument("--worker-id", required=True)
+    parser.add_argument("--job-id", default="cross-process-idempotency")
     args = parser.parse_args()
 
     def observe(pid: int, _started_at: float) -> None:
@@ -43,7 +44,7 @@ def main() -> None:
         process_observer=observe,
     )
     service = JobService(Store(args.database), max_workers=1, max_attempts=1, adapter=adapter, worker_id=args.worker_id)
-    spec = JobSpec("cross-process-idempotency", "tiny", "tiny", "normal", "TT", 0, "ns")
+    spec = JobSpec(args.job_id, "tiny", "tiny", "normal", "TT", 0, "ns")
     args.ready_file.write_text("ready", encoding="utf-8")
     wait_for(args.release_file)
     result = service.submit(spec)

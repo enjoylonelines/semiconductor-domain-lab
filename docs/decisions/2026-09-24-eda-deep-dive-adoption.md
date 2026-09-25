@@ -46,6 +46,8 @@ changed-spec conflict(변경 명세 충돌)는 service(서비스)와 HTTP(하이
 
 same-host cross-process idempotency(동일 호스트 교차 프로세스 멱등성)는 SQLite(라이트급 SQL 저장소) `job_id` primary key(작업 식별자 기본 키)의 atomic insert(원자적 삽입)를 creation claim(생성 권한)으로 사용해 닫았다. insert(삽입) 승자만 execution future(실행 예약)를 만들고, 충돌자는 같은 canonical spec hash(정규 명세 해시)의 durable Run(지속 작업)을 반환한다. 실제 OpenSTA(정적 타이밍 분석 도구) 두 process(프로세스) 동시 제출에서 child process(하위 프로세스)는 하나만 관찰됐다. [교차 프로세스 멱등성 근거](../evidence/2026-09-25-opensta-cross-process-idempotency.md)는 single-host SQLite(단일 호스트 라이트급 SQL 저장소)만 다루며, multi-host(다중 호스트)·distributed database(분산 데이터베이스)·network partition(네트워크 분할)은 열린 경계다.
 
+동일 host(호스트)의 서로 다른 `job_id` 8개를 external submitter process(외부 제출자 프로세스) 8개가 동시에 SQLite WAL(라이트급 SQL 쓰기 전용 로그)에 제출한 [경합 측정](../evidence/2026-09-25-opensta-cross-process-submit.md)에서는 `database locked` 오류 없이 8개 모두 실제 OpenSTA(정적 타이밍 분석 도구)를 실행하고 성공했다. 이 작은 고정 workload(작업부하)에는 SQLite write contention(라이트급 SQL 쓰기 경합) challenger(도전 대안)가 없으므로 PostgreSQL(포스트그레스큐엘)·persistent queue(영속 대기열)·Kafka(카프카)는 보류한다. sustained lock error(지속 잠금 오류), p95 submit latency(상위 95% 제출 지연) 성장, longer-lived Run(더 오래 실행되는 작업), multi-host(다중 호스트), replay(재생)·multi-consumer(다중 소비자)·reprocessing(재처리) 요구가 재검증 조건이다.
+
 ## Cross-process worker-loss recovery(교차 프로세스 작업자 손실 복구)
 
 실제 delayed OpenSTA child process(지연된 OpenSTA 하위 프로세스)가 실행 중인 worker process(작업자 프로세스)를 `SIGKILL`로 종료하는 baseline(기준선)은 lease expiry(임대 만료) 뒤 살아 있는 child(하위 프로세스)를 `ABANDONED/FAILED`로 처리했다. 이 상태에서 자동 재시도하면 동일 작업을 중복 실행할 수 있으므로 채택하지 않는다.

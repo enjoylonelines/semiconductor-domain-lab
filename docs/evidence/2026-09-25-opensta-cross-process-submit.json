@@ -1,0 +1,9 @@
+{
+  "contenders": 8,
+  "observed_opensta_children": 8,
+  "scheduled": 8,
+  "scope": "8 external submitters with distinct job_id values released concurrently",
+  "succeeded": 8,
+  "synthetic": false,
+  "wall_seconds": 0.397757
+}
