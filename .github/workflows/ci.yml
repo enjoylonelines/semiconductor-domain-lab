@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  contract:
+    name: Unit, regression, and contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run software contracts
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+      - name: Record real-tool boundary
+        run: |
+          echo "OpenSTA integration and fault-injection tests require the recorded local fixture."
+          echo "ubuntu-latest has no /tmp/eda-opensta-20260924 fixture, so those tests are skipped, not treated as tool validation."
+
+  opensta-integration:
+    name: Recorded OpenSTA integration and fault injection
+    runs-on: [self-hosted, eda-opensta]
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run recorded real-tool suite
+        run: PYTHONPATH=src python -m unittest tests.test_async_lifecycle.OpenStaSubprocessAdapterTests -v

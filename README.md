@@ -2,9 +2,9 @@
 
 퀄리타스반도체 SW Engineer 지원을 위한 **반도체/IP/EDA 도메인 학습·검증** 저장소.
 
-현재 상태: **2026-09-24 synthetic 프로토타입. 기존 테스트 5개 통과, 별도 probe에서 실행 실패의 SUCCEEDED 저장과 비유한 slack의 PASS 재현. 실제 EDA 출력 fixture·Product/Engineering STOP은 미충족. 최초 commit 전이며 파일은 untracked다.**
+현재 상태: **2026-09-25 bounded EDA workflow prototype(범위 제한 EDA 작업흐름 프로토타입).** 실제 OpenSTA(정적 타이밍 분석 도구) `setup-max` 고정 fixture(고정 입력), Run/Attempt(작업/실행 시도) lease(임대), timeout/cancel(시간 초과/취소), worker-loss reconciliation(작업자 손실 상태 조정), single-host resource admission(단일 호스트 자원 입장), result trust(결과 신뢰) 분리를 구현·측정했다. 이 근거는 운영 용량이나 회사 내부 시스템 주장이 아니며, 정확한 경계는 [채택 결정](docs/decisions/2026-09-24-eda-deep-dive-adoption.md)과 `docs/evidence/`를 따른다.
 
-현재 좁은 목표는 **단일 STA(정적 타이밍 분석) 보고서의 불완전·오류 입력을 정상으로 승격하지 않는 검증 도구**다. [실제 반례](docs/evidence/stage2-validation-matrix.md)와 [Product DoD·Deep Dive·두 STOP](docs/plans/research-and-scope-2026-09-23.md)을 따른다. 다음 코드는 nonzero-exit 성공 오표시의 회귀·최소 수정이다. 실제 tool/version은 환경·공개 fixture 확인 후 확정하며, mock만으로 완료하지 않는다.
+현재 작업은 **고정된 OpenSTA workload(작업부하)의 실행·복구·결과 신뢰 계약을 실제 child process(하위 프로세스)로 검증하고, 확장 조건을 근거와 함께 남기는 것**이다. [첫 번째 딥다이브 계획](docs/plans/2026-09-24-eda-execution-correctness-deep-dive.md), [채택 결정](docs/decisions/2026-09-24-eda-deep-dive-adoption.md), [실제 STA 근거](docs/evidence/2026-09-24-real-sta/README.md)를 따른다.
 
 - [현재 범위 정본 — 재조사·문제 재정의·확장/종료 조건](docs/plans/research-and-scope-2026-09-23.md)
 - [학습 가이드](docs/learning/study-guide.md)
