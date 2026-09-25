@@ -1,5 +1,6 @@
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 from .models import JobSpec
 from .service import JobService
 
@@ -33,11 +34,27 @@ class ApiHandler(BaseHTTPRequestHandler):
         self._send(202, self.service.submit(spec))
 
     def do_GET(self) -> None:
+        request = urlsplit(self.path)
+        revision_prefix = "/revisions/"
+        revision_suffix = "/new-violations"
+        if request.path.startswith(revision_prefix) and request.path.endswith(revision_suffix):
+            candidate = request.path[len(revision_prefix):-len(revision_suffix)]
+            baseline = parse_qs(request.query).get("baseline", [None])[0]
+            if not candidate or not baseline:
+                self._send(400, {"error": "baseline query parameter is required"})
+                return
+            try:
+                # The measured index cost is justified only when this comparison feature is requested.
+                self.service.store.create_finding_query_index()
+                self._send(200, self.service.store.new_violations(baseline, candidate))
+            except KeyError as exc:
+                self._send(404, {"error": str(exc)})
+            return
         prefix = "/jobs/"
-        if not self.path.startswith(prefix):
+        if not request.path.startswith(prefix):
             self._send(404, {"error": "not found"})
             return
-        job_id = self.path[len(prefix):]
+        job_id = request.path[len(prefix):]
         result = self.service.get(job_id)
         self._send(200, result) if result else self._send(404, {"error": "job not found"})
 
