@@ -1,0 +1,10 @@
+{
+  "final": "SUCCEEDED",
+  "observed_opensta_children": 1,
+  "scope": "two external submitter processes release concurrently with one immutable job_id",
+  "submitters": [
+    {"final_status": "RUNNING", "returned_status": "RUNNING", "scheduled": false},
+    {"final_status": "SUCCEEDED", "returned_status": "RUNNING", "scheduled": true}
+  ],
+  "synthetic": false
+}

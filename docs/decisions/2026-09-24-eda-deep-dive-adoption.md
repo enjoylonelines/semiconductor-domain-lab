@@ -42,7 +42,9 @@ full budget(가득 찬 예산)은 server-side automatic retry(서버 측 자동 
 
 실제 OpenSTA(정적 타이밍 분석 도구) 8개가 실행 중인 profile(프로파일)에서 `RetryingJobClient`는 429 뒤 300ms를 한 번 기다리고 같은 `job_id`를 성공시켰다. 이로써 server hint(서버 힌트) → caller delay(호출자 대기) → bounded re-submit(제한 재제출) 경로는 같은 workload(작업부하)에서 닫혔다. 다수 caller(호출자)의 동시 재시도와 changed-spec conflict(변경 명세 충돌)는 [호출자 재시도 근거](../evidence/2026-09-25-opensta-client-retry.md)의 한계로 남긴다.
 
-changed-spec conflict(변경 명세 충돌)는 service(서비스)와 HTTP(하이퍼텍스트 전송 프로토콜) contract test(계약 테스트)로 닫혔다. SQLite(라이트급 SQL 저장소)의 기존 Run(작업)에 `spec_hash`가 없으면 안전하게 `409`로 거절한다. 원래 명세의 모든 필드를 과거 행에서 복원할 수 없으므로 legacy row(기존 행)를 자동으로 같은 요청으로 추정하지 않는다. 실제 다른 host(호스트)·프로세스에서 동시에 같은 key(키)를 제출하는 cross-process idempotency(교차 프로세스 멱등성)는 single-host SQLite(단일 호스트 라이트급 SQL 저장소) 경계 밖이다.
+changed-spec conflict(변경 명세 충돌)는 service(서비스)와 HTTP(하이퍼텍스트 전송 프로토콜) contract test(계약 테스트)로 닫혔다. SQLite(라이트급 SQL 저장소)의 기존 Run(작업)에 `spec_hash`가 없으면 안전하게 `409`로 거절한다. 원래 명세의 모든 필드를 과거 행에서 복원할 수 없으므로 legacy row(기존 행)를 자동으로 같은 요청으로 추정하지 않는다.
+
+same-host cross-process idempotency(동일 호스트 교차 프로세스 멱등성)는 SQLite(라이트급 SQL 저장소) `job_id` primary key(작업 식별자 기본 키)의 atomic insert(원자적 삽입)를 creation claim(생성 권한)으로 사용해 닫았다. insert(삽입) 승자만 execution future(실행 예약)를 만들고, 충돌자는 같은 canonical spec hash(정규 명세 해시)의 durable Run(지속 작업)을 반환한다. 실제 OpenSTA(정적 타이밍 분석 도구) 두 process(프로세스) 동시 제출에서 child process(하위 프로세스)는 하나만 관찰됐다. [교차 프로세스 멱등성 근거](../evidence/2026-09-25-opensta-cross-process-idempotency.md)는 single-host SQLite(단일 호스트 라이트급 SQL 저장소)만 다루며, multi-host(다중 호스트)·distributed database(분산 데이터베이스)·network partition(네트워크 분할)은 열린 경계다.
 
 ## Cross-process worker-loss recovery(교차 프로세스 작업자 손실 복구)
 

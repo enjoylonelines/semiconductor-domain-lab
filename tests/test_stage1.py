@@ -148,5 +148,23 @@ class Stage1Tests(unittest.TestCase):
         with self.assertRaises(IdempotencyConflict):
             service.submit(JobSpec("idempotency-conflict", "design-a", "PCIe", "timing", "TT", -0.12, "ns"))
 
+    def test_sqlite_run_creation_is_an_atomic_cross_store_idempotency_claim(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "runs.sqlite"
+            first_store = Store(database)
+            second_store = Store(database)
+            first_service = JobService(first_store, max_workers=1)
+            second_service = JobService(second_store, max_workers=1)
+            spec = JobSpec("cross-store-idempotency", "design-a", "PCIe", "timing", "TT", 0.12, "ns", 0.05)
+
+            first = first_service.submit(spec)
+            second = second_service.submit(spec)
+
+            self.assertEqual(first["job_id"], second["job_id"])
+            self.assertIn(spec.job_id, first_service.futures)
+            self.assertNotIn(spec.job_id, second_service.futures)
+            first_service.futures[spec.job_id].result(timeout=2)
+            self.assertEqual(second_service.get(spec.job_id)["status"], "SUCCEEDED")
+
 if __name__ == "__main__":
     unittest.main()

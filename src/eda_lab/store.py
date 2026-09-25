@@ -76,14 +76,15 @@ class Store:
     def now(self) -> float:
         return self._now()
 
-    def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str, spec_hash: str | None = None) -> None:
+    def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str, spec_hash: str | None = None) -> bool:
         with self._lock:
-            self.connection.execute(
+            cursor = self.connection.execute(
                 "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, semantic_status, provenance_status, trust_status, provenance, spec_hash, updated_at) "
                 "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', '{}', ?, ?)",
                 (job_id, design_id, ip_family, flow_name, spec_hash, self._now()),
             )
             self.connection.commit()
+            return cursor.rowcount == 1
 
     def update_run(self, job_id: str, **fields: Any) -> None:
         allowed = {"status", "parse_status", "check_status", "completeness", "semantic_status", "provenance_status", "trust_status", "provenance", "artifact_path", "error"}

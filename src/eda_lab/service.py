@@ -106,7 +106,14 @@ class JobService:
                 in_flight = sum(not future.done() for future in self.futures.values())
                 if in_flight >= self.max_in_flight:
                     raise BackpressureError(self.max_in_flight, self.backpressure_retry_after_seconds)
-            self.store.create_run(spec.job_id, spec.design_id, spec.ip_family, spec.flow_name, spec_hash)
+            created = self.store.create_run(spec.job_id, spec.design_id, spec.ip_family, spec.flow_name, spec_hash)
+            if not created:
+                existing = self.store.get_run(spec.job_id)
+                if existing is None:
+                    raise RuntimeError("run insertion was not visible after an idempotency conflict")
+                if existing.get("spec_hash") != spec_hash:
+                    raise IdempotencyConflict("idempotency key reused with different spec")
+                return existing
             future = self.executor.submit(self._execute, spec)
             self.futures[spec.job_id] = future
             return self.store.get_run(spec.job_id) or {}
