@@ -30,6 +30,8 @@ resource profile(자원 프로파일)은 호스트별 명시 설정이다. CPU/m
 
 `JobService`에서 같은 profile(프로파일)로 8개 actual OpenSTA(실제 OpenSTA) 작업을 실행했을 때 9번째 submit(제출)은 Run(작업)을 만들지 않고 `BackpressureError`로 거절됐고, 8개 완료 뒤 다음 작업은 성공했다. 따라서 이 profile(프로파일)의 현재 admission policy(입장 정책)는 persistent queue(영속 대기열)가 아닌 bounded rejection(제한된 거절)이다. retry delay(재시도 지연), fairness(공정성), priority queue(우선순위 대기열), sustained arrival rate(지속 도착률)는 아직 측정하지 않았으며, [서비스 예산 근거](../evidence/2026-09-25-opensta-service-budget.md)를 넘는 주장으로 승격하지 않는다.
 
+같은 profile(프로파일)의 mixed load/recovery(혼합 부하/복구)에서 normal/tight/timeout(정상/엄격/시간 초과) OpenSTA 작업의 execution/check/trust status(실행/검사/신뢰 상태) 분리가 유지됐다. 실제 child process(하위 프로세스)가 완료된 뒤 terminal persistence(종단 저장) 전에 worker loss(작업자 손실)를 주입하면 reconciliation(상태 재조정)은 `ABANDONED/FAILED`로 끝냈다. 이는 성공 추측을 막는 근거이며, sustained arrival rate(지속 도착률), persistent queue(영속 대기열), multi-host recovery(다중 호스트 복구) 채택 근거는 아니다. 자세한 원시 결과와 한계는 [혼합 부하/복구 근거](../evidence/2026-09-25-opensta-load-recovery.md)에 있다.
+
 ## Finding index(발견 항목 인덱스) 운영 정책
 
 EDA(전자 설계 자동화) revision review(설계 버전 검토)는 한 번의 조회 횟수보다 revision(설계 버전)마다 발생하는 engineer comparison(엔지니어 비교)과 interactive latency(대화형 지연)가 중요하다. 따라서 index(인덱스)는 다음 세 조건이 모두 성립할 때만 해당 service profile(서비스 프로파일)에서 켠다.
