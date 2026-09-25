@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from eda_lab.models import AdapterRunResult, JobSpec
 from eda_lab.parser import parse_report, parse_report_streaming
-from eda_lab.service import IdempotencyConflict, JobService
+from eda_lab.service import BackpressureError, IdempotencyConflict, JobService
 from eda_lab.runner import SyntheticTimingAdapter
 from eda_lab.store import Store
 
@@ -165,6 +165,16 @@ class Stage1Tests(unittest.TestCase):
             self.assertNotIn(spec.job_id, second_service.futures)
             first_service.futures[spec.job_id].result(timeout=2)
             self.assertEqual(second_service.get(spec.job_id)["status"], "SUCCEEDED")
+
+    def test_sqlite_admission_claim_is_shared_by_separate_services(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "runs.sqlite"
+            first_service = JobService(Store(database), max_workers=1, max_in_flight=1)
+            second_service = JobService(Store(database), max_workers=1, max_in_flight=1)
+            first_service.submit(JobSpec("shared-budget-first", "design-a", "PCIe", "timing", "TT", 0.12, "ns", 0.05))
+            with self.assertRaises(BackpressureError):
+                second_service.submit(JobSpec("shared-budget-second", "design-a", "PCIe", "timing", "TT", 0.12, "ns"))
+            self.assertIsNone(second_service.get("shared-budget-second"))
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,16 @@
+{
+  "baseline": {
+    "configured_process_local_budget": 8,
+    "observed_opensta_children": 9,
+    "rejected": 0,
+    "scheduled": 9
+  },
+  "reinforcement": {
+    "configured_shared_budget": 8,
+    "observed_opensta_children": 8,
+    "rejected": 1,
+    "scheduled": 8
+  },
+  "scope": "9 external services concurrently submit distinct real OpenSTA jobs against one SQLite database",
+  "synthetic": false
+}

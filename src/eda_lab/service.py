@@ -8,7 +8,7 @@ from uuid import uuid4
 from .models import AdapterRunResult, JobSpec
 from .parser import parse_report
 from .runner import AdapterCancelledError, SyntheticTimingAdapter
-from .store import Store
+from .store import InFlightBudgetExhausted, Store
 
 
 class BackpressureError(RuntimeError):
@@ -106,7 +106,13 @@ class JobService:
                 in_flight = sum(not future.done() for future in self.futures.values())
                 if in_flight >= self.max_in_flight:
                     raise BackpressureError(self.max_in_flight, self.backpressure_retry_after_seconds)
-            created = self.store.create_run(spec.job_id, spec.design_id, spec.ip_family, spec.flow_name, spec_hash)
+            try:
+                created = self.store.create_run(
+                    spec.job_id, spec.design_id, spec.ip_family, spec.flow_name, spec_hash,
+                    max_in_flight=self.max_in_flight,
+                )
+            except InFlightBudgetExhausted:
+                raise BackpressureError(self.max_in_flight, self.backpressure_retry_after_seconds) from None
             if not created:
                 existing = self.store.get_run(spec.job_id)
                 if existing is None:

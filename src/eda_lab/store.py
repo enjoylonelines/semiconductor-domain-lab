@@ -6,6 +6,10 @@ from pathlib import Path
 from typing import Any
 
 
+class InFlightBudgetExhausted(RuntimeError):
+    """A durable SQLite admission claim found the shared budget full."""
+
+
 class Store:
     def __init__(self, path: str | Path = ":memory:", now=None):
         self.connection = sqlite3.connect(path, check_same_thread=False)
@@ -76,15 +80,39 @@ class Store:
     def now(self) -> float:
         return self._now()
 
-    def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str, spec_hash: str | None = None) -> bool:
+    def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str, spec_hash: str | None = None,
+                   max_in_flight: int | None = None) -> bool:
         with self._lock:
-            cursor = self.connection.execute(
-                "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, semantic_status, provenance_status, trust_status, provenance, spec_hash, updated_at) "
-                "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', '{}', ?, ?)",
-                (job_id, design_id, ip_family, flow_name, spec_hash, self._now()),
-            )
-            self.connection.commit()
-            return cursor.rowcount == 1
+            if max_in_flight is None:
+                cursor = self.connection.execute(
+                    "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, semantic_status, provenance_status, trust_status, provenance, spec_hash, updated_at) "
+                    "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', '{}', ?, ?)",
+                    (job_id, design_id, ip_family, flow_name, spec_hash, self._now()),
+                )
+                self.connection.commit()
+                return cursor.rowcount == 1
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                existing = self.connection.execute("SELECT 1 FROM runs WHERE job_id = ?", (job_id,)).fetchone()
+                if existing is not None:
+                    self.connection.commit()
+                    return False
+                in_flight = self.connection.execute(
+                    "SELECT COUNT(*) FROM runs WHERE status IN ('QUEUED', 'RUNNING')"
+                ).fetchone()[0]
+                if in_flight >= max_in_flight:
+                    raise InFlightBudgetExhausted()
+                self.connection.execute(
+                    "INSERT INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, semantic_status, provenance_status, trust_status, provenance, spec_hash, updated_at) "
+                    "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', '{}', ?, ?)",
+                    (job_id, design_id, ip_family, flow_name, spec_hash, self._now()),
+                )
+                self.connection.commit()
+                return True
+            except Exception:
+                if self.connection.in_transaction:
+                    self.connection.rollback()
+                raise
 
     def update_run(self, job_id: str, **fields: Any) -> None:
         allowed = {"status", "parse_status", "check_status", "completeness", "semantic_status", "provenance_status", "trust_status", "provenance", "artifact_path", "error"}
