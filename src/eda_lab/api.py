@@ -44,8 +44,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 self._send(400, {"error": "baseline query parameter is required"})
                 return
             try:
-                # The measured index cost is justified only when this comparison feature is requested.
-                self.service.store.create_finding_query_index()
+                if self.service.enable_new_violation_index:
+                    self.service.store.create_finding_query_index()
                 self._send(200, self.service.store.new_violations(baseline, candidate))
             except KeyError as exc:
                 self._send(404, {"error": str(exc)})

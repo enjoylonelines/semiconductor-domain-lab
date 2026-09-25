@@ -13,7 +13,7 @@ class BackpressureError(RuntimeError):
 
 
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
@@ -22,6 +22,7 @@ class JobService:
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
         self.max_in_flight = max_in_flight
+        self.enable_new_violation_index = enable_new_violation_index
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.lock = Lock()
         self.futures = {}

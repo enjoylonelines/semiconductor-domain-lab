@@ -24,11 +24,18 @@ class ResultQueryApiTests(unittest.TestCase):
         self.server.shutdown()
         self.server.server_close()
 
-    def test_new_violation_endpoint_enables_the_selected_query_index(self):
+    def test_new_violation_endpoint_does_not_change_storage_policy_by_default(self):
         with urlopen(f"http://127.0.0.1:{self.server.server_port}/revisions/candidate/new-violations?baseline=base") as response:
             payload = json.loads(response.read())
         self.assertEqual(payload["comparability"], "COMPARABLE")
         self.assertEqual(len(payload["findings"]), 1)
+        self.assertFalse(self.store.has_finding_query_index())
+
+    def test_explicit_operational_setting_enables_the_query_index(self):
+        ApiHandler.service = JobService(self.store, enable_new_violation_index=True)
+        with urlopen(f"http://127.0.0.1:{self.server.server_port}/revisions/candidate/new-violations?baseline=base") as response:
+            payload = json.loads(response.read())
+        self.assertEqual(payload["comparability"], "COMPARABLE")
         self.assertTrue(self.store.has_finding_query_index())
 
 
