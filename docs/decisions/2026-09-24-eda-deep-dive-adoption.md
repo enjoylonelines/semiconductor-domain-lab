@@ -34,6 +34,12 @@ resource profile(자원 프로파일)은 호스트별 명시 설정이다. CPU/m
 
 fixed arrival wave(고정 도착 파동) 4회에서 9개 요청마다 8개는 성공하고 하나는 즉시 거절됐다. 총 36개 중 32개를 수락해 p95 end-to-end latency(상위 95% 종단 간 지연) 약 273.9ms를 보였고, 거절된 4개는 Run(작업)을 만들지 않았다. 이 workload(작업부하)에서 queue growth(대기열 증가)나 wave 간 지연 누적은 관측되지 않았으므로 persistent queue(영속 대기열)와 Kafka(카프카)는 보류한다. [고정 도착 부하 근거](../evidence/2026-09-25-opensta-fixed-arrival.md)는 batch arrival(배치 도착)만 다루며, 실제 retry behavior(재시도 행동)·fairness(공정성)·priority(우선순위)·license pressure(라이선스 압박)는 포함하지 않는다.
 
+## Backpressure retry(역압 재시도) 계약
+
+full budget(가득 찬 예산)은 server-side automatic retry(서버 측 자동 재시도)가 아니라 HTTP(하이퍼텍스트 전송 프로토콜) `429`로 알린다. 응답은 `retryable=true`, `retry_after_ms`와 표준 `Retry-After` header(헤더)를 포함한다. single-host profile(단일 호스트 프로파일)을 선택하는 service(서비스)는 측정 p95(상위 95% 지연) 약 274ms를 반올림한 `backpressure_retry_after_seconds=0.3`을 명시 설정한다. 이때 `retry_after_ms=300`이며 `Retry-After` header(헤더)는 정수 초 단위라 `1`이다.
+
+호출자는 같은 `job_id`를 보존하고 300ms 뒤 bounded exponential backoff(제한 지수 백오프)와 jitter(무작위 지연)를 적용해 재제출한다. 한 요청 흐름의 backpressure retry(역압 재시도)는 최대 3회로 제한하고, 이후에는 호출자에게 명시 실패를 돌려준다. server(서버)는 거절된 Run(작업)을 저장하거나 내부 대기열에 넣지 않는다. 현재 `job_id` 재제출은 기존 Run(작업)을 반환하는 멱등 경계다. 같은 `job_id`에 다른 명세를 보내는 conflict detection(충돌 감지)은 아직 구현하지 않았으므로, 호출자는 재시도 중 명세를 변경하면 안 된다.
+
 ## Finding index(발견 항목 인덱스) 운영 정책
 
 EDA(전자 설계 자동화) revision review(설계 버전 검토)는 한 번의 조회 횟수보다 revision(설계 버전)마다 발생하는 engineer comparison(엔지니어 비교)과 interactive latency(대화형 지연)가 중요하다. 따라서 index(인덱스)는 다음 세 조건이 모두 성립할 때만 해당 service profile(서비스 프로파일)에서 켠다.

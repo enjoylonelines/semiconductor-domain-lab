@@ -1,17 +1,20 @@
 import json
+import math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from .models import JobSpec
-from .service import JobService
+from .service import BackpressureError, JobService
 
 class ApiHandler(BaseHTTPRequestHandler):
     service = JobService()
 
-    def _send(self, status: int, payload: dict) -> None:
+    def _send(self, status: int, payload: dict, headers: dict[str, str] | None = None) -> None:
         encoded = json.dumps(payload, sort_keys=True).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -31,7 +34,14 @@ class ApiHandler(BaseHTTPRequestHandler):
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self._send(400, {"error": str(exc)})
             return
-        self._send(202, self.service.submit(spec))
+        try:
+            self._send(202, self.service.submit(spec))
+        except BackpressureError as exc:
+            self._send(429, {
+                "error": "in_flight_budget_exhausted",
+                "retryable": True,
+                "retry_after_ms": round(exc.retry_after_seconds * 1000),
+            }, {"Retry-After": str(max(1, math.ceil(exc.retry_after_seconds)))})
 
     def do_GET(self) -> None:
         request = urlsplit(self.path)

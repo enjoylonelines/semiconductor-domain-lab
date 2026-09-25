@@ -11,9 +11,14 @@ from .store import Store
 class BackpressureError(RuntimeError):
     """The configured in-flight execution budget is exhausted."""
 
+    def __init__(self, budget: int, retry_after_seconds: float):
+        self.budget = budget
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(f"in-flight execution budget exhausted: {budget}")
+
 
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False, backpressure_retry_after_seconds: float = 1.0):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
@@ -22,6 +27,9 @@ class JobService:
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
         self.max_in_flight = max_in_flight
+        if backpressure_retry_after_seconds <= 0:
+            raise ValueError("backpressure_retry_after_seconds must be positive")
+        self.backpressure_retry_after_seconds = backpressure_retry_after_seconds
         self.enable_new_violation_index = enable_new_violation_index
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.lock = Lock()
@@ -62,7 +70,7 @@ class JobService:
             if self.max_in_flight is not None:
                 in_flight = sum(not future.done() for future in self.futures.values())
                 if in_flight >= self.max_in_flight:
-                    raise BackpressureError(f"in-flight execution budget exhausted: {self.max_in_flight}")
+                    raise BackpressureError(self.max_in_flight, self.backpressure_retry_after_seconds)
             self.store.create_run(spec.job_id, spec.design_id, spec.ip_family, spec.flow_name)
             future = self.executor.submit(self._execute, spec)
             self.futures[spec.job_id] = future
