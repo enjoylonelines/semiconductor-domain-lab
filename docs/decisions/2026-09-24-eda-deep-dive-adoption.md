@@ -38,18 +38,6 @@ EDA(전자 설계 자동화) revision review(설계 버전 검토)는 한 번의
 
 세 번째 조건의 3회는 현재 20,000 Finding(발견 항목) workload에서 단일 조회도 CPU time(중앙 처리 장치 시간)만 보면 인덱스 비용을 회수한다는 관측보다 보수적인 운영 기준이다. 이 기준은 단발 exploratory query(탐색 조회)가 index write/storage cost(인덱스 쓰기/저장 비용)를 영구히 만들지 않게 한다. 조건을 만족하지 않으면 기본값 `enable_new_violation_index=False`를 유지한다. 매 30일 또는 데이터 보존 정책 변경 시 write latency(쓰기 지연), database size(데이터베이스 크기), Q2 count(조회 2 횟수)를 다시 측정한다.
 
-## Hardware resource(하드웨어 자원) 정책
-
-TRACE32(트레이스32)·Aardvark(아드바크) 같은 장비는 단순 CPU slot(중앙 처리 장치 슬롯)이 아니다. resource key(자원 키)는 `adapter + physical device ID(물리 장치 식별자) + board/target configuration(보드/타깃 설정) + bus/probe mode(버스/프로브 모드)`로 구성한다. 같은 key(키)는 한 Attempt(실행 시도)만 소유한다.
-
-1. preflight(사전 점검)는 장치 식별자, 연결, 승인된 firmware/target configuration(펌웨어/타깃 설정), 전원·reset ownership(리셋 소유권)을 확인한다. 확인 불가면 외부 command(외부 명령)를 보내지 않는다.
-2. read-only diagnostic(읽기 전용 진단)은 transport failure(전송 실패) 뒤 제한 재시도를 허용할 수 있다. flash/write/reset/destructive operation(플래시/쓰기/리셋/파괴적 작업)은 결과가 불명확하면 자동 재시도하지 않는다.
-3. timeout/cancel(시간 초과/취소) 뒤 close/release(닫기/반납)를 시도한다. 장치 state(상태)를 readback(다시 읽기)으로 확인하지 못하면 `UNKNOWN_HARDWARE_STATE`로 기록하고 quarantine(격리)한다. 해당 key(키)는 operator reset/inspection(운영자 리셋/점검) 전 새 작업을 받지 않는다.
-4. heartbeat(심장박동)는 worker(작업자) 생존만 뜻한다. device health(장치 상태)나 target execution(타깃 실행)을 증명하지 않으므로, completion(완료)에는 별도 readback/artifact(다시 읽기/산출물) 근거가 필요하다.
-5. raw transaction log(원시 트랜잭션 로그), device serial(장치 일련번호), board/firmware hash(보드/펌웨어 해시), command allowlist ID(명령 허용 목록 식별자), reset owner(리셋 소유자)를 provenance(출처 추적)에 남긴다. 비밀값·license path(라이선스 경로)는 남기지 않는다.
-
-현재 구현은 fixture(고정 입력)와 injected-client boundary(주입 클라이언트 경계)에서 독점 acquire/release(획득/반납)만 검증했다. 실제 장비 연결·전기적 상태·quarantine(격리)·operator recovery(운영자 복구)는 real hardware(실제 하드웨어) 사용 승인 뒤 한 장비·한 read-only smoke command(읽기 전용 간이 명령)로 시작한다.
-
 ## Career OS(커리어 운영체제) 반영 시점
 
 Career OS(커리어 운영체제)는 모든 딥다이브가 끝날 때까지 기다리는 원본 저장소가 아니다. 각 bounded cycle(제한된 사이클)이 plan(계획), implementation(구현), evidence(근거), decision(결정), limitation(한계)을 갖고 commit(커밋)된 뒤에만 짧은 link/summary(링크/요약)를 추가한다. 실행 중 원시 수치, 미확정 판단, 중간 변경은 Career OS(커리어 운영체제)에 적재하지 않는다. 이 저장소가 source of truth(원본 기준)로 남는다.
