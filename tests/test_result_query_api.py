@@ -5,6 +5,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from eda_lab.api import ApiHandler, create_server
+from eda_lab.client import RetryingJobClient
+from eda_lab.models import JobSpec
 from eda_lab.service import JobService
 from eda_lab.store import Store
 
@@ -79,6 +81,29 @@ class ResultQueryApiTests(unittest.TestCase):
         adapter.release.set()
         ApiHandler.service.futures["first"].result(timeout=2)
         self.assertEqual(self._post(payload)[0], 202)
+
+    def test_client_retries_the_same_job_id_after_the_server_hint(self):
+        adapter = BlockingAdapter()
+        ApiHandler.service = JobService(
+            Store(), max_workers=1, max_attempts=1, adapter=adapter,
+            max_in_flight=1, backpressure_retry_after_seconds=0.3,
+        )
+        self._post({"job_id": "first", "design_id": "d", "ip_family": "ip"})
+        self.assertTrue(adapter.started.wait(timeout=1))
+        delays = []
+
+        def release_then_wait(delay):
+            delays.append(delay)
+            adapter.release.set()
+            ApiHandler.service.futures["first"].result(timeout=2)
+
+        client = RetryingJobClient(
+            f"http://127.0.0.1:{self.server.server_port}", jitter_seconds=0,
+            sleeper=release_then_wait,
+        )
+        accepted = client.submit(JobSpec("retry-later", "d", "ip", "timing", "TT", 0.1, "ns"))
+        self.assertEqual(accepted["job_id"], "retry-later")
+        self.assertEqual(delays, [0.3])
 
     def _post(self, payload):
         request = Request(
