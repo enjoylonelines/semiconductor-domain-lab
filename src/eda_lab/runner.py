@@ -7,6 +7,7 @@ import tempfile
 import time
 from pathlib import Path
 from threading import Lock
+from typing import Callable
 from .models import AdapterRunResult, JobSpec
 
 
@@ -67,6 +68,7 @@ class OpenStaSubprocessAdapter:
         script_name: str = "run.tcl",
         timeout_seconds: float = 30,
         termination_grace_seconds: float = 1,
+        process_observer: Callable[[int, float], None] | None = None,
     ):
         self.sta_path = Path(sta_path)
         self.liberty_path = Path(liberty_path)
@@ -75,6 +77,7 @@ class OpenStaSubprocessAdapter:
         self.script_name = script_name
         self.timeout_seconds = timeout_seconds
         self.termination_grace_seconds = termination_grace_seconds
+        self.process_observer = process_observer
         self._processes: dict[str, subprocess.Popen] = {}
         self._cancelled_jobs: set[str] = set()
         self._lock = Lock()
@@ -133,6 +136,8 @@ class OpenStaSubprocessAdapter:
             text=True,
             start_new_session=True,
         )
+        if self.process_observer is not None:
+            self.process_observer(process.pid, time.monotonic())
         with self._lock:
             self._processes[spec.job_id] = process
         try:
