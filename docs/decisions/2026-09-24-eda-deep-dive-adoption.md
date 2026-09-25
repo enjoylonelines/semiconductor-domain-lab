@@ -28,6 +28,8 @@ server count(서버 수), CPU(중앙 처리 장치), memory(메모리), disk(디
 
 resource profile(자원 프로파일)은 호스트별 명시 설정이다. CPU/memory quota(중앙 처리 장치/메모리 할당량), container limit(컨테이너 제한), license seat(라이선스 좌석), netlist size(넷리스트 크기), co-tenant workload(공동 실행 작업부하), queue/deadline requirement(대기열/마감 요구)가 바뀌면 1부터 같은 방법으로 재측정한다. 9개 이상 동시성·multi-host(다중 호스트)·autoscaling(자동 확장)은 한계 실험이 관측될 때만 다음 challenger(도전 대안)로 연다.
 
+`JobService`에서 같은 profile(프로파일)로 8개 actual OpenSTA(실제 OpenSTA) 작업을 실행했을 때 9번째 submit(제출)은 Run(작업)을 만들지 않고 `BackpressureError`로 거절됐고, 8개 완료 뒤 다음 작업은 성공했다. 따라서 이 profile(프로파일)의 현재 admission policy(입장 정책)는 persistent queue(영속 대기열)가 아닌 bounded rejection(제한된 거절)이다. retry delay(재시도 지연), fairness(공정성), priority queue(우선순위 대기열), sustained arrival rate(지속 도착률)는 아직 측정하지 않았으며, [서비스 예산 근거](../evidence/2026-09-25-opensta-service-budget.md)를 넘는 주장으로 승격하지 않는다.
+
 ## Finding index(발견 항목 인덱스) 운영 정책
 
 EDA(전자 설계 자동화) revision review(설계 버전 검토)는 한 번의 조회 횟수보다 revision(설계 버전)마다 발생하는 engineer comparison(엔지니어 비교)과 interactive latency(대화형 지연)가 중요하다. 따라서 index(인덱스)는 다음 세 조건이 모두 성립할 때만 해당 service profile(서비스 프로파일)에서 켠다.
