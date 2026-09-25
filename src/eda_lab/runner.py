@@ -1,5 +1,6 @@
 import os
 import hashlib
+import signal
 import shutil
 import subprocess
 import tempfile
@@ -84,8 +85,16 @@ class OpenStaSubprocessAdapter:
             if process is None or process.poll() is not None:
                 return False
             self._cancelled_jobs.add(job_id)
-            process.terminate()
+            self._terminate_process_group(process, signal.SIGTERM)
             return True
+
+    @staticmethod
+    def _terminate_process_group(process: subprocess.Popen, sig: int) -> None:
+        """Signal the dedicated session so adapter-created descendants cannot outlive an Attempt."""
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return
 
     def _required_fixture(self, name: str) -> Path:
         path = self.fixture_dir / name
@@ -122,18 +131,19 @@ class OpenStaSubprocessAdapter:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,
         )
         with self._lock:
             self._processes[spec.job_id] = process
         try:
             stdout, stderr = process.communicate(timeout=self.timeout_seconds)
         except subprocess.TimeoutExpired:
-            process.terminate()
+            self._terminate_process_group(process, signal.SIGTERM)
             termination = "SIGTERM"
             try:
                 stdout, stderr = process.communicate(timeout=self.termination_grace_seconds)
             except subprocess.TimeoutExpired:
-                process.kill()
+                self._terminate_process_group(process, signal.SIGKILL)
                 stdout, stderr = process.communicate()
                 termination = "SIGKILL"
             (directory / "timing.report").write_text(stdout or "", encoding="utf-8")

@@ -1,5 +1,6 @@
 import threading
 import time
+import os
 import shutil
 import tempfile
 import unittest
@@ -265,6 +266,7 @@ class OpenStaSubprocessAdapterTests(unittest.TestCase):
             deadline = time.monotonic() + 1
             while "real-opensta-cancel" not in adapter._processes and time.monotonic() < deadline:
                 time.sleep(0.01)
+            self.assertEqual(os.getpgid(adapter._processes["real-opensta-cancel"].pid), adapter._processes["real-opensta-cancel"].pid)
             self.assertTrue(service.cancel("real-opensta-cancel"))
             service.futures["real-opensta-cancel"].result(timeout=2)
             result = service.get("real-opensta-cancel")

@@ -69,6 +69,8 @@ The worker(작업자) now starts a periodic heartbeat(주기적 심장박동) lo
 
 Terminal Attempt writes(종단 실행 시도 쓰기) are now fenced(차단) by the owning lease token(소유 임대 토큰). A stale token(오래된 토큰) cannot mark an Attempt(실행 시도) `SUCCEEDED` or otherwise overwrite the current owner(현재 소유자). A current token(현재 토큰) can complete the same Attempt(실행 시도) exactly once. The stale-token fault-injection test(오래된 토큰 장애 주입 테스트) and the full suite(전체 묶음) passed with 45 tests(테스트).
 
+OpenSTA subprocesses(하위 프로세스)는 dedicated session/process group(전용 세션/프로세스 그룹)에서 시작한다. Cancellation(취소)과 timeout escalation(시간 초과 단계 상승)은 direct child(직접 하위 프로세스)가 아니라 process group(프로세스 그룹)에 `SIGTERM`, 필요시 `SIGKILL`을 보낸다. 실제 delayed OpenSTA(지연 OpenSTA) 취소 테스트에서 PID(프로세스 식별자)가 자신의 process-group leader(프로세스 그룹 리더)임을 확인하고 `CANCELLED` 종단 상태를 검증했다.
+
 ## Bounded concurrency probe(제한된 동시성 탐침)
 
 The fixed normal OpenSTA workload(고정 정상 OpenSTA 작업부하) was run once at each concurrent child count(동시 하위 프로세스 수). All runs exited `0`; the process intervals(프로세스 구간) overlapped for the multi-child cases(다중 하위 프로세스 경우).
