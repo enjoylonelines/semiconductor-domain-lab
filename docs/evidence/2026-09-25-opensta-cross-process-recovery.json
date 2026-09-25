@@ -1,0 +1,17 @@
+{
+  "after_child_exit": {"attempt_status": "ABANDONED", "status": "FAILED"},
+  "after_live_child_check": {"attempt_status": "RUNNING", "status": "RUNNING"},
+  "before_recovery": {"attempt_status": "RUNNING", "status": "RUNNING"},
+  "child_alive_after_recovery": true,
+  "child_alive_before_recovery": true,
+  "child_exited_before_second_reconciliation": true,
+  "first_reconciliation": {
+    "recovered": [],
+    "skipped_live": [],
+    "skipped_live_child": ["cross-process-worker-loss"]
+  },
+  "scope": "worker SIGKILL while delayed real OpenSTA child is alive",
+  "second_reconciliation": {"recovered": ["cross-process-worker-loss"], "skipped_live": []},
+  "synthetic": false,
+  "worker_exit_signal": "SIGKILL"
+}

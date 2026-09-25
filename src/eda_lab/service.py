@@ -1,7 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
-from threading import BoundedSemaphore, Event, Lock, Thread
+import os
+from threading import BoundedSemaphore, Event, Lock, Thread, local
 import time
 from uuid import uuid4
 from .models import AdapterRunResult, JobSpec
@@ -40,6 +41,17 @@ class JobService:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.lock = Lock()
         self.futures = {}
+        self._process_context = local()
+        add_observer = getattr(self.adapter, "add_process_observer", None)
+        if callable(add_observer):
+            add_observer(self._record_adapter_process)
+
+    def _record_adapter_process(self, pid: int, started_at: float) -> None:
+        context = getattr(self._process_context, "attempt", None)
+        if context is None:
+            return
+        job_id, attempt_no, lease_token = context
+        self.store.record_attempt_process(job_id, attempt_no, lease_token, pid, started_at)
 
     @staticmethod
     def _spec_hash(spec: JobSpec) -> str:
@@ -142,7 +154,11 @@ class JobService:
                 if self.resource_slots:
                     self.resource_slots.acquire()
                     acquired = True
-                adapter_result = self.adapter.run(spec)
+                self._process_context.attempt = (spec.job_id, attempt_no, lease_token)
+                try:
+                    adapter_result = self.adapter.run(spec)
+                finally:
+                    del self._process_context.attempt
                 if not self.store.heartbeat_attempt(spec.job_id, attempt_no, lease_token, self.lease_seconds):
                     raise RuntimeError("attempt lease was lost before result collection")
                 if isinstance(adapter_result, AdapterRunResult):
@@ -224,6 +240,7 @@ class JobService:
         cutoff = self.store.now() - stale_after_seconds
         recovered: list[str] = []
         skipped_live: list[str] = []
+        skipped_live_child: list[str] = []
         skipped_active_lease: list[str] = []
         expired_leases = set(self.store.list_expired_leased_attempts())
         for run in self.store.list_stale_running(cutoff):
@@ -233,6 +250,14 @@ class JobService:
                 skipped_live.append(run["job_id"])
                 continue
             attempts = run["attempts"]
+            if attempts and attempts[-1]["process_pid"] is not None:
+                try:
+                    os.kill(attempts[-1]["process_pid"], 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    skipped_live_child.append(run["job_id"])
+                    continue
             if attempts and attempts[-1]["lease_token"] and (run["job_id"], attempts[-1]["attempt_no"]) not in expired_leases:
                 skipped_active_lease.append(run["job_id"])
                 continue
@@ -247,4 +272,6 @@ class JobService:
         result = {"recovered": recovered, "skipped_live": skipped_live}
         if skipped_active_lease:
             result["skipped_active_lease"] = skipped_active_lease
+        if skipped_live_child:
+            result["skipped_live_child"] = skipped_live_child
         return result

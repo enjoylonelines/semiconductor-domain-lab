@@ -78,6 +78,7 @@ class OpenStaSubprocessAdapter:
         self.timeout_seconds = timeout_seconds
         self.termination_grace_seconds = termination_grace_seconds
         self.process_observer = process_observer
+        self._additional_process_observers: list[Callable[[int, float], None]] = []
         self._processes: dict[str, subprocess.Popen] = {}
         self._cancelled_jobs: set[str] = set()
         self._lock = Lock()
@@ -90,6 +91,18 @@ class OpenStaSubprocessAdapter:
             self._cancelled_jobs.add(job_id)
             self._terminate_process_group(process, signal.SIGTERM)
             return True
+
+    def add_process_observer(self, observer: Callable[[int, float], None]) -> None:
+        with self._lock:
+            self._additional_process_observers.append(observer)
+
+    def _notify_process_started(self, pid: int, started_at: float) -> None:
+        if self.process_observer is not None:
+            self.process_observer(pid, started_at)
+        with self._lock:
+            observers = tuple(self._additional_process_observers)
+        for observer in observers:
+            observer(pid, started_at)
 
     @staticmethod
     def _terminate_process_group(process: subprocess.Popen, sig: int) -> None:
@@ -136,8 +149,7 @@ class OpenStaSubprocessAdapter:
             text=True,
             start_new_session=True,
         )
-        if self.process_observer is not None:
-            self.process_observer(process.pid, time.monotonic())
+        self._notify_process_started(process.pid, time.monotonic())
         with self._lock:
             self._processes[spec.job_id] = process
         try:

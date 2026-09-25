@@ -44,6 +44,14 @@ full budget(가득 찬 예산)은 server-side automatic retry(서버 측 자동 
 
 changed-spec conflict(변경 명세 충돌)는 service(서비스)와 HTTP(하이퍼텍스트 전송 프로토콜) contract test(계약 테스트)로 닫혔다. SQLite(라이트급 SQL 저장소)의 기존 Run(작업)에 `spec_hash`가 없으면 안전하게 `409`로 거절한다. 원래 명세의 모든 필드를 과거 행에서 복원할 수 없으므로 legacy row(기존 행)를 자동으로 같은 요청으로 추정하지 않는다. 실제 다른 host(호스트)·프로세스에서 동시에 같은 key(키)를 제출하는 cross-process idempotency(교차 프로세스 멱등성)는 single-host SQLite(단일 호스트 라이트급 SQL 저장소) 경계 밖이다.
 
+## Cross-process worker-loss recovery(교차 프로세스 작업자 손실 복구)
+
+실제 delayed OpenSTA child process(지연된 OpenSTA 하위 프로세스)가 실행 중인 worker process(작업자 프로세스)를 `SIGKILL`로 종료하는 baseline(기준선)은 lease expiry(임대 만료) 뒤 살아 있는 child(하위 프로세스)를 `ABANDONED/FAILED`로 처리했다. 이 상태에서 자동 재시도하면 동일 작업을 중복 실행할 수 있으므로 채택하지 않는다.
+
+single-host SQLite(단일 호스트 라이트급 SQL 저장소) profile(프로파일)에서는 Attempt(실행 시도)가 adapter-observed process PID(어댑터 관측 프로세스 식별자)와 시작 시각을 저장한다. reconciliation(상태 재조정)은 PID가 살아 있으면 expired lease(만료 임대)여도 `RUNNING`을 유지하고, child exit(하위 프로세스 종료)를 확인한 뒤에만 `ABANDONED/FAILED`로 전환한다. 같은 실제 workload(작업부하)에서 두 단계를 재실행한 [교차 프로세스 복구 근거](../evidence/2026-09-25-opensta-cross-process-recovery.md)가 이 결정을 뒷받침한다.
+
+PID reuse(프로세스 식별자 재사용), multi-host(다중 호스트), container restart(컨테이너 재시작), host reboot(호스트 재부팅)는 이 계약 밖이다. PID 재사용 의심은 false terminal transition(잘못된 종단 전이)보다 보수적으로 `RUNNING`을 남긴다. 실제 환경에서 이 보수적 보류가 운영 부담이 되거나 host-wide process identity(호스트 전역 프로세스 식별성)가 필요해질 때만 external supervisor(외부 감독자)·host identity(호스트 식별성)·durable queue(지속 대기열)를 challenger(도전 대안)로 한계 실험한다.
+
 ## Finding index(발견 항목 인덱스) 운영 정책
 
 EDA(전자 설계 자동화) revision review(설계 버전 검토)는 한 번의 조회 횟수보다 revision(설계 버전)마다 발생하는 engineer comparison(엔지니어 비교)과 interactive latency(대화형 지연)가 중요하다. 따라서 index(인덱스)는 다음 세 조건이 모두 성립할 때만 해당 service profile(서비스 프로파일)에서 켠다.

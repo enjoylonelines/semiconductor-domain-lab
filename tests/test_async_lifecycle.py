@@ -141,6 +141,20 @@ class AsyncLifecycleTests(unittest.TestCase):
         self.assertEqual(outcome, {"recovered": [], "skipped_live": [], "skipped_active_lease": ["active-lease"]})
         self.assertEqual(store.get_run("active-lease")["status"], "RUNNING")
 
+    def test_expired_lease_with_a_live_external_child_is_not_reconciled(self):
+        clock = [100.0]
+        store = Store(now=lambda: clock[0])
+        store.create_run("external-child", "design-a", "PCIe", "synthetic-timing")
+        store.update_run("external-child", status="RUNNING")
+        store.record_attempt("external-child", 1, "RUNNING", retry_class="not_classified")
+        store.acquire_attempt_lease("external-child", 1, "worker-a", "token-a", 1)
+        self.assertTrue(store.record_attempt_process("external-child", 1, "token-a", 4242, 100.0))
+        clock[0] = 102.0
+        with patch("eda_lab.service.os.kill"):
+            outcome = JobService(store, max_workers=1).recover_stale_runs(stale_after_seconds=0)
+        self.assertEqual(outcome, {"recovered": [], "skipped_live": [], "skipped_live_child": ["external-child"]})
+        self.assertEqual(store.get_run("external-child")["status"], "RUNNING")
+
     def test_stale_database_record_is_not_recovered_while_worker_is_live(self):
         clock = [100.0]
         adapter = BlockingAdapter()

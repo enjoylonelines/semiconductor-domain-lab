@@ -31,6 +31,7 @@ class Store:
           status TEXT NOT NULL, error_type TEXT, error TEXT, artifact_path TEXT,
           retry_class TEXT, started_at REAL NOT NULL DEFAULT 0, updated_at REAL NOT NULL DEFAULT 0,
           lease_owner TEXT, lease_token TEXT, lease_expires_at REAL, heartbeat_at REAL,
+          process_pid INTEGER, process_started_at REAL,
           PRIMARY KEY(job_id, attempt_no)
         );
         CREATE TABLE IF NOT EXISTS metric_rows (
@@ -63,6 +64,8 @@ class Store:
         self._add_column_if_missing("attempts", "lease_token", "TEXT")
         self._add_column_if_missing("attempts", "lease_expires_at", "REAL")
         self._add_column_if_missing("attempts", "heartbeat_at", "REAL")
+        self._add_column_if_missing("attempts", "process_pid", "INTEGER")
+        self._add_column_if_missing("attempts", "process_started_at", "REAL")
         self.connection.commit()
 
     def _add_column_if_missing(self, table: str, column: str, definition: str) -> None:
@@ -172,6 +175,16 @@ class Store:
                 "UPDATE attempts SET heartbeat_at = ?, lease_expires_at = ?, updated_at = ? "
                 "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_token = ? AND lease_expires_at >= ?",
                 (now, now + ttl_seconds, now, job_id, attempt_no, token, now),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def record_attempt_process(self, job_id: str, attempt_no: int, token: str, pid: int, started_at: float) -> bool:
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE attempts SET process_pid = ?, process_started_at = ?, updated_at = ? "
+                "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_token = ?",
+                (pid, started_at, self._now(), job_id, attempt_no, token),
             )
             self.connection.commit()
             return cursor.rowcount == 1
