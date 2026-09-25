@@ -16,6 +16,7 @@ class Store:
         self.connection.row_factory = sqlite3.Row
         self._lock = threading.RLock()
         self._now = now or time.time
+        self.connection.execute("PRAGMA foreign_keys=ON")
         self.connection.execute("PRAGMA journal_mode=WAL")
         self.connection.executescript("""
         CREATE TABLE IF NOT EXISTS runs (
@@ -249,12 +250,16 @@ class Store:
 
     def save_findings(self, revision_id: str, findings: list[tuple[str, str, str, str, str, str, float]]) -> None:
         with self._lock:
-            self.connection.executemany(
-                "INSERT INTO findings(revision_id, run_id, startpoint, endpoint, path_group, analysis_type, corner, slack_ns) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [(revision_id, *finding) for finding in findings],
-            )
-            self.connection.commit()
+            try:
+                self.connection.executemany(
+                    "INSERT INTO findings(revision_id, run_id, startpoint, endpoint, path_group, analysis_type, corner, slack_ns) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [(revision_id, *finding) for finding in findings],
+                )
+                self.connection.commit()
+            except Exception:
+                self.connection.rollback()
+                raise
 
     def has_finding_query_index(self) -> bool:
         row = self.connection.execute(

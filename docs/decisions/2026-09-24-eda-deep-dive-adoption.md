@@ -58,6 +58,10 @@ PID reuse(프로세스 식별자 재사용), multi-host(다중 호스트), conta
 
 ## Finding index(발견 항목 인덱스) 운영 정책
 
+Finding(발견 항목) 대량 적재와 concurrent writer(동시 작성자)는 현재 query optimization(조회 최적화)의 핵심 채택 축으로 확대하지 않는다. 다만 SQLite(라이트급 SQL 저장소) foreign key(외래 키)는 connection(연결)마다 활성화하고, `save_findings` batch(대량 실행)는 오류 때 rollback(되돌리기)한다. 별도 SQLite connection(라이트급 SQL 연결)의 terminal transition(종단 전이)은 lease token(임대 토큰)으로 owner(소유자)만 성공한다. [대량 적재·동시 쓰기 경계 근거](../evidence/2026-09-25-bulk-and-concurrent-write-boundary.md)는 이 최소 무결성 계약만 뒷받침한다.
+
+batch sizing(배치 크기), chunk retry(청크 재시도), idempotent ingest(멱등 적재), sustained write contention(지속 쓰기 경합), p95 ingest latency(상위 95% 적재 지연), multi-host writer(다중 호스트 작성자)는 미측정 한계다. 실제 workload(작업부하)에서 부분 실패·중복 적재·지속 잠금·재생/재처리 요구가 관측될 때만 이 축을 다시 연다.
+
 EDA(전자 설계 자동화) revision review(설계 버전 검토)는 한 번의 조회 횟수보다 revision(설계 버전)마다 발생하는 engineer comparison(엔지니어 비교)과 interactive latency(대화형 지연)가 중요하다. 따라서 index(인덱스)는 다음 세 조건이 모두 성립할 때만 해당 service profile(서비스 프로파일)에서 켠다.
 
 1. `new-violations` comparison(새 위반 비교)이 실제 review workflow(검토 흐름)에 포함된다.
