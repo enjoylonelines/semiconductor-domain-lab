@@ -47,3 +47,15 @@ The first measurement exposed non-deterministic ordering(비결정적 순서) fo
 ## Limits(한계) and stop(종료)
 
 This is one local SQLite(라이트급 SQL 저장소) observation, without concurrent writers(동시 작성자), storage-size measurement(저장 크기 측정), ingest cost(적재 비용), or PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`. Materialization(사전 계산), partitioning(파티셔닝), and production migration(운영 마이그레이션) were not run. The index remains an explicit opt-in challenger(명시 선택 도전 대안) pending Human Decision(사람 결정); it is not a general production recommendation(운영 일반 권고).
+
+## Write(쓰기) and storage(저장) cost measurement(비용 측정)
+
+`PYTHONPATH=src .venv/bin/python tools/finding_index_benchmark.py` seeded two comparable revisions(비교 가능한 두 설계 버전) with 10,000 findings(발견 항목) each, checkpointed SQLite WAL(라이트급 SQL 저장소 WAL), and measured the same database(데이터베이스) with and without the composite index(복합 인덱스).
+
+| measurement(측정) | no index during ingest(적재 중 인덱스 없음) | index during ingest(적재 중 인덱스 있음) |
+| --- | --- | --- |
+| ingest seconds(적재 초) | `0.031534` | `0.045751` |
+| database bytes(데이터베이스 바이트) | `1,241,088` before index(인덱스 전) | `2,289,664` with index(인덱스 포함) |
+| index creation seconds(인덱스 생성 초) | `0.012148` | included(포함) |
+
+The measured read benefit(측정된 조회 이득)는 큰 반면, 이 workload(작업부하)에서 index(인덱스)는 ingest time(적재 시간)을 약 45% 늘리고 database size(데이터베이스 크기)를 약 1.05 MiB 늘린다. The repository therefore retains explicit opt-in(명시 선택) instead of default creation(기본 생성): the read path(조회 경로) that needs Q2(조회 2)를 선택할 때만 index(인덱스)를 만든다.
