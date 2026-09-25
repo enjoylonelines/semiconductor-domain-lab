@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from eda_lab.models import AdapterRunResult, JobSpec
 from eda_lab.parser import parse_report, parse_report_streaming
-from eda_lab.service import JobService
+from eda_lab.service import IdempotencyConflict, JobService
 from eda_lab.runner import SyntheticTimingAdapter
 from eda_lab.store import Store
 
@@ -141,6 +141,12 @@ class Stage1Tests(unittest.TestCase):
         result = service.get("r2")
         self.assertEqual(result["status"], "SUCCEEDED")
         self.assertEqual(result["check_status"], "PASS")
+
+    def test_same_job_id_with_a_changed_spec_is_an_explicit_conflict(self):
+        service = JobService(Store(), max_workers=1)
+        service.submit(JobSpec("idempotency-conflict", "design-a", "PCIe", "timing", "TT", 0.12, "ns"))
+        with self.assertRaises(IdempotencyConflict):
+            service.submit(JobSpec("idempotency-conflict", "design-a", "PCIe", "timing", "TT", -0.12, "ns"))
 
 if __name__ == "__main__":
     unittest.main()

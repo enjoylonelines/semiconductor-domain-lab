@@ -3,7 +3,7 @@ import math
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from .models import JobSpec
-from .service import BackpressureError, JobService
+from .service import BackpressureError, IdempotencyConflict, JobService
 
 class ApiHandler(BaseHTTPRequestHandler):
     service = JobService()
@@ -42,6 +42,8 @@ class ApiHandler(BaseHTTPRequestHandler):
                 "retryable": True,
                 "retry_after_ms": round(exc.retry_after_seconds * 1000),
             }, {"Retry-After": str(max(1, math.ceil(exc.retry_after_seconds)))})
+        except IdempotencyConflict:
+            self._send(409, {"error": "idempotency_key_reused_with_different_spec", "retryable": False})
 
     def do_GET(self) -> None:
         request = urlsplit(self.path)

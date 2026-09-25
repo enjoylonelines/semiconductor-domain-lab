@@ -24,4 +24,4 @@
 
 이 profile(프로파일)에서는 server-side automatic retry(서버 측 자동 재시도)나 persistent queue(영속 대기열) 없이 caller-side bounded retry(호출자 측 제한 재시도)를 채택한다. `RetryingJobClient`의 기본 최대 재시도는 3회이며, 실제 호출자는 random jitter(무작위 지연)를 기본 100ms까지 더한다.
 
-이 근거는 한 client(호출자), 한 번의 429, fixed tiny workload(고정된 작은 작업부하)만 다룬다. 다수 호출자의 동시 재시도, heterogeneous arrival rate(서로 다른 도착률), same job ID with changed spec(변경된 명세로 같은 작업 식별자), persistent queue(영속 대기열)는 아직 열린 루프다.
+이 근거는 한 client(호출자), 한 번의 429, fixed tiny workload(고정된 작은 작업부하)만 다룬다. same job ID with changed spec(변경된 명세로 같은 작업 식별자)은 별도 service/HTTP contract test(서비스/HTTP 계약 테스트)에서 `409`로 닫았다. 다수 호출자의 동시 재시도, heterogeneous arrival rate(서로 다른 도착률), persistent queue(영속 대기열)는 아직 열린 루프다.

@@ -105,6 +105,21 @@ class ResultQueryApiTests(unittest.TestCase):
         self.assertEqual(accepted["job_id"], "retry-later")
         self.assertEqual(delays, [0.3])
 
+    def test_same_job_id_with_changed_request_is_http_conflict(self):
+        first = {"job_id": "same-key", "design_id": "d", "ip_family": "ip", "worst_slack": 0.1}
+        self.assertEqual(self._post(first)[0], 202)
+        first["worst_slack"] = -0.1
+        with self.assertRaises(HTTPError) as raised:
+            self._post(first)
+        response = raised.exception
+        self.assertEqual(response.code, 409)
+        try:
+            self.assertEqual(json.loads(response.read()), {
+                "error": "idempotency_key_reused_with_different_spec", "retryable": False,
+            })
+        finally:
+            response.close()
+
     def _post(self, payload):
         request = Request(
             f"http://127.0.0.1:{self.server.server_port}/jobs", data=json.dumps(payload).encode(),

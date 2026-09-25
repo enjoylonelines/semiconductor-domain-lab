@@ -20,7 +20,7 @@ class Store:
           check_status TEXT NOT NULL, completeness TEXT NOT NULL DEFAULT 'unknown',
           semantic_status TEXT NOT NULL DEFAULT 'UNKNOWN', provenance_status TEXT NOT NULL DEFAULT 'UNKNOWN',
           trust_status TEXT NOT NULL DEFAULT 'UNKNOWN',
-          provenance TEXT NOT NULL DEFAULT '{}', artifact_path TEXT, error TEXT,
+          provenance TEXT NOT NULL DEFAULT '{}', artifact_path TEXT, error TEXT, spec_hash TEXT,
           updated_at REAL NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS metrics (
@@ -55,6 +55,7 @@ class Store:
         self._add_column_if_missing("runs", "semantic_status", "TEXT NOT NULL DEFAULT 'UNKNOWN'")
         self._add_column_if_missing("runs", "provenance_status", "TEXT NOT NULL DEFAULT 'UNKNOWN'")
         self._add_column_if_missing("runs", "trust_status", "TEXT NOT NULL DEFAULT 'UNKNOWN'")
+        self._add_column_if_missing("runs", "spec_hash", "TEXT")
         self._add_column_if_missing("attempts", "retry_class", "TEXT")
         self._add_column_if_missing("attempts", "started_at", "REAL NOT NULL DEFAULT 0")
         self._add_column_if_missing("attempts", "updated_at", "REAL NOT NULL DEFAULT 0")
@@ -72,12 +73,12 @@ class Store:
     def now(self) -> float:
         return self._now()
 
-    def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str) -> None:
+    def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str, spec_hash: str | None = None) -> None:
         with self._lock:
             self.connection.execute(
-                "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, semantic_status, provenance_status, trust_status, provenance, updated_at) "
-                "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', '{}', ?)",
-                (job_id, design_id, ip_family, flow_name, self._now()),
+                "INSERT OR IGNORE INTO runs(job_id, design_id, ip_family, flow_name, status, parse_status, check_status, completeness, semantic_status, provenance_status, trust_status, provenance, spec_hash, updated_at) "
+                "VALUES (?, ?, ?, ?, 'QUEUED', 'NOT_STARTED', 'UNKNOWN', 'unknown', 'UNKNOWN', 'UNKNOWN', 'UNKNOWN', '{}', ?, ?)",
+                (job_id, design_id, ip_family, flow_name, spec_hash, self._now()),
             )
             self.connection.commit()
 

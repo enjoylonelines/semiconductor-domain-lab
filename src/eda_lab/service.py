@@ -1,4 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
+import json
 from threading import BoundedSemaphore, Event, Lock, Thread
 import time
 from uuid import uuid4
@@ -15,6 +17,10 @@ class BackpressureError(RuntimeError):
         self.budget = budget
         self.retry_after_seconds = retry_after_seconds
         super().__init__(f"in-flight execution budget exhausted: {budget}")
+
+
+class IdempotencyConflict(RuntimeError):
+    """One idempotency key was reused with a different immutable JobSpec."""
 
 
 class JobService:
@@ -34,6 +40,20 @@ class JobService:
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.lock = Lock()
         self.futures = {}
+
+    @staticmethod
+    def _spec_hash(spec: JobSpec) -> str:
+        payload = {
+            "job_id": spec.job_id,
+            "design_id": spec.design_id,
+            "ip_family": spec.ip_family,
+            "flow_name": spec.flow_name,
+            "corner": spec.corner,
+            "worst_slack": spec.worst_slack,
+            "unit": spec.unit,
+            "duration_seconds": spec.duration_seconds,
+        }
+        return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     @staticmethod
     def _trust_status(result, process_exit_code: int | None) -> str:
@@ -64,14 +84,17 @@ class JobService:
 
     def submit(self, spec: JobSpec) -> dict:
         with self.lock:
+            spec_hash = self._spec_hash(spec)
             existing = self.store.get_run(spec.job_id)
             if existing:
+                if existing.get("spec_hash") != spec_hash:
+                    raise IdempotencyConflict("idempotency key reused with different spec")
                 return existing
             if self.max_in_flight is not None:
                 in_flight = sum(not future.done() for future in self.futures.values())
                 if in_flight >= self.max_in_flight:
                     raise BackpressureError(self.max_in_flight, self.backpressure_retry_after_seconds)
-            self.store.create_run(spec.job_id, spec.design_id, spec.ip_family, spec.flow_name)
+            self.store.create_run(spec.job_id, spec.design_id, spec.ip_family, spec.flow_name, spec_hash)
             future = self.executor.submit(self._execute, spec)
             self.futures[spec.job_id] = future
             return self.store.get_run(spec.job_id) or {}
