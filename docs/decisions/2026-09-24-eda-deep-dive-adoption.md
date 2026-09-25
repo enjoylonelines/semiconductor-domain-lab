@@ -5,7 +5,7 @@
 
 ## Adopted(채택)
 
-- SQLite(라이트급 SQL 저장소) single-host(단일 호스트) durable Run/Attempt(지속 작업/실행 시도) 기록
+- local validation profile(로컬 검증 프로필)의 SQLite(라이트급 SQL 저장소) single-host(단일 호스트) durable Run/Attempt(지속 작업/실행 시도) 기록
 - opaque lease token(불투명 임대 토큰), conditional heartbeat(조건부 심장박동), expired-lease reconciliation candidate(만료 임대 조정 후보)
 - fixed-template OpenSTA subprocess(고정 템플릿 OpenSTA 하위 프로세스), timeout(시간 초과) termination(종료), explicit cancellation(명시 취소), input provenance hash(입력 출처 추적 해시)
 - explicit in-flight budget(명시적 진행 중 실행 예산) backpressure(역압)
@@ -15,6 +15,8 @@
 ## Deferred(보류)
 
 Kafka(카프카), Redis(레디스), PostgreSQL(포스트그레스큐엘), partitioning(파티셔닝), distributed fencing(분산 차단), and materialization(사전 계산)은 현재 실제 한계 실험에서 필요성이 관측되지 않아 도입하지 않는다.
+
+SQLite(라이트급 SQL 저장소)는 운영 DB 채택 결론이 아니라 local validation profile(로컬 검증 프로필)의 선택이다. networked multi-worker operation(네트워크 다중 작업자 운영) 후보는 [운영 프로필 보정 계획](../plans/2026-09-25-operating-profile-correction.md)의 PostgreSQL challenger(포스트그레스큐엘 도전 대안) 비교와 Human Decision Gate(사람 결정 관문) 뒤에만 채택한다.
 
 ## Revalidation trigger(재검증 조건)
 
