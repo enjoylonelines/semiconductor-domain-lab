@@ -20,8 +20,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked dependencies
+        run: uv sync --frozen
       - name: Run software contracts
-        run: PYTHONPATH=src python -m unittest discover -s tests -v
+        run: PYTHONPATH=src uv run python -m unittest discover -s tests -v
       - name: Record real-tool boundary
         run: |
           echo "OpenSTA integration and fault-injection tests require the recorded local fixture."
@@ -38,10 +41,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked dependencies
+        run: uv sync --frozen
       - name: Repeat failed contract gate once
         id: retry
         continue-on-error: true
-        run: PYTHONPATH=src python -m unittest discover -s tests -v
+        run: PYTHONPATH=src uv run python -m unittest discover -s tests -v
       - name: Record retry outcome without overriding the original failure
         if: always()
         run: |
