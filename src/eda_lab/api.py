@@ -1,9 +1,22 @@
 import json
 import math
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 from .models import JobSpec
 from .service import BackpressureError, IdempotencyConflict, JobService
+
+
+def service_from_environment() -> JobService:
+    """Build the explicit PostgreSQL API role when EDA_POSTGRES_DSN is set."""
+    dsn = os.environ.get("EDA_POSTGRES_DSN")
+    if not dsn:
+        return JobService()
+    from .postgres_store import PostgresStore
+    return JobService(
+        PostgresStore(dsn), max_in_flight=int(os.environ.get("EDA_MAX_IN_FLIGHT", "8")),
+        execution_mode="external", worker_id=os.environ.get("EDA_API_ID", "api"),
+    )
 
 class ApiHandler(BaseHTTPRequestHandler):
     service = JobService()
@@ -73,5 +86,8 @@ class ApiHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args) -> None:
         return
 
-def create_server(host: str = "127.0.0.1", port: int = 8080) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), ApiHandler)
+def create_server(host: str = "127.0.0.1", port: int = 8080, service: JobService | None = None) -> ThreadingHTTPServer:
+    if service is None:
+        return ThreadingHTTPServer((host, port), ApiHandler)
+    handler = type("ConfiguredApiHandler", (ApiHandler,), {"service": service})
+    return ThreadingHTTPServer((host, port), handler)

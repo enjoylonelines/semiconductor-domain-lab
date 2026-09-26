@@ -6,6 +6,8 @@
 
 submitter(제출자)는 HTTP server(하이퍼텍스트 전송 프로토콜 서버)가 아니라 `JobService.submit()`을 직접 호출한다. 따라서 이 결과는 central database(중앙 데이터베이스) → queue claim(대기 작업 권한 획득) → independent worker(독립 작업자) → actual OpenSTA(실제 OpenSTA) 경로의 근거이며, network HTTP load(네트워크 HTTP 부하)나 multi-host deployment(다중 호스트 배포) 근거는 아니다.
 
+별도 PostgreSQL HTTP contract test(HTTP 계약 테스트)는 `POST /jobs`가 external worker mode(외부 작업자 모드)의 `QUEUED` Run(대기 작업)을 만들고, distinct worker(분리 작업자)가 이를 claim(권한 획득)해 완료하는 경로를 확인한다. HTTP endpoint(엔드포인트)의 sustained load(지속 부하)는 이 측정에 포함하지 않는다.
+
 ## Contract(계약)
 
 - API-side(응용 프로그램 인터페이스 측) submit(제출)은 immutable spec payload(불변 명세 적재)를 가진 `QUEUED` Run(대기 작업)만 기록한다.

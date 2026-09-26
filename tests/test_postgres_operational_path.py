@@ -1,10 +1,12 @@
 import os
+import json
 import threading
 import unittest
 from pathlib import Path
 from uuid import uuid4
 
 from eda_lab.models import JobSpec
+from eda_lab.api import create_server
 from eda_lab.postgres_store import PostgresStore
 from eda_lab.runner import OpenStaSubprocessAdapter, SyntheticTimingAdapter
 from eda_lab.service import BackpressureError, JobService
@@ -56,6 +58,30 @@ class PostgresOperationalPathTests(unittest.TestCase):
         completed = api.get(spec.job_id)
         self.assertEqual(completed["status"], "SUCCEEDED")
         self.assertEqual(completed["attempts"][-1]["lease_owner"], "worker-1")
+
+    def test_http_api_writes_a_queued_postgres_run_for_a_distinct_worker(self):
+        api = self.service(self.store(), "api-http")
+        server = create_server(port=0, service=api)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        spec = self.spec("http")
+        try:
+            from urllib.request import Request, urlopen
+            request = Request(
+                f"http://127.0.0.1:{server.server_port}/jobs",
+                data=json.dumps({"job_id": spec.job_id, "design_id": spec.design_id, "ip_family": spec.ip_family}).encode(),
+                headers={"Content-Type": "application/json"}, method="POST",
+            )
+            with urlopen(request, timeout=2) as response:
+                self.assertEqual(response.status, 202)
+                self.assertEqual(json.loads(response.read())["status"], "QUEUED")
+        finally:
+            server.shutdown()
+            server.server_close()
+        worker_store = self.store()
+        worker_service = self.service(worker_store, "worker-http")
+        self.assertEqual(PostgresWorker(worker_store, worker_service).drain(), [spec.job_id])
+        self.assertEqual(api.get(spec.job_id)["status"], "SUCCEEDED")
 
     @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
     def test_distinct_postgres_worker_persists_a_real_opensta_result(self):
