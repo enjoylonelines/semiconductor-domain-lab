@@ -1,7 +1,7 @@
 # Distributed execution ownership(분산 실행 소유권) Deep Dive 1 계획
 
-작성일: 2026-09-26  
-상태: 계획 승인됨; Phase B(단계 B) 실행 전  
+작성일: 2026-09-26
+상태: 계획 승인됨; Phase B(단계 B) 실행 전
 원본 기준: 이 프로젝트 repository(저장소). Career OS(커리어 운영체제)는 완료된 bounded cycle(제한된 사이클)의 링크·요약·revision(리비전)만 보관한다.
 
 ## 1. Problem framing(문제 정의)
