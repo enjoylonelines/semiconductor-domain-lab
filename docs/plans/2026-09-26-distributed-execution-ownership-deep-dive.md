@@ -1,7 +1,7 @@
 # Distributed execution ownership(분산 실행 소유권) Deep Dive 1 계획
 
 작성일: 2026-09-26
-상태: 계획 승인됨; Phase B(단계 B) 실행 전
+상태: Phase B(단계 B) 완료; Phase C(단계 C) Human Decision Gate(사람 결정 관문) 대기
 원본 기준: 이 프로젝트 repository(저장소). Career OS(커리어 운영체제)는 완료된 bounded cycle(제한된 사이클)의 링크·요약·revision(리비전)만 보관한다.
 
 ## 1. Problem framing(문제 정의)
@@ -52,6 +52,7 @@ OpenSTA는 checkpoint/resume(중간 저장점/이어서 실행)을 제공하지 
 - [Operating profile correction](2026-09-25-operating-profile-correction.md): local SQLite와 PostgreSQL candidate(후보)의 구분 및 Human Decision Gate(사람 결정 관문).
 - [PostgreSQL OpenSTA operational-path evidence](../evidence/2026-09-26-postgres-opensta-operational.md): two submitter/two worker, 8 actual Run, 5 repeats의 정상 경로 수치. HTTP sustained load(지속 HTTP 부하)나 multi-host(다중 호스트) 근거가 아님.
 - [Cross-process recovery evidence](../evidence/2026-09-25-opensta-cross-process-recovery.md): same-host PID liveness(동일 호스트 프로세스 식별자 생존성)가 original child(기존 하위 프로세스)를 보호해야 한다는 local baseline(로컬 기준선).
+- [PostgreSQL ownership fault-injection evidence](../evidence/2026-09-26-postgres-execution-ownership-faults.md): actual OpenSTA(실제 OpenSTA) child(하위 프로세스)의 B1–B3 worker-loss(작업자 손실) 실행과 raw record(원시 기록).
 
 ## 3. Architecture and state contract(아키텍처와 상태 계약)
 
@@ -124,6 +125,10 @@ Phase B evidence(근거)는 Run/Attempt row history(행 이력), worker/child PI
 - **Pass candidate(통과 후보):** B0–B3 모두 invariant를 만족하고, new Attempt가 live child와 overlap(겹침)하지 않으며, accepted completion이 하나다.
 - **Fail:** token fence 우회, duplicate accepted completion, child-dead 뒤 무기한 `RUNNING`, 또는 live child 중 새 Attempt 생성.
 - **Human decision:** confirmed-dead 이후 bounded re-execution을 채택할지 `FAILED` 확정을 유지할지 결정한다.
+
+### Phase B outcome(단계 B 결과) — complete(완료)
+
+B0 normal(정상)은 기존 PostgreSQL operational-path evidence(운영 경로 근거)에서 통과했다. B1/B2/B3는 별도 worker process(작업자 프로세스)와 actual OpenSTA(실제 OpenSTA)로 통과했다. 결정된 bounded policy(제한 정책)는 confirmed-dead child(종료 확인 하위 프로세스)를 `ABANDONED`로 기록하고 Run(작업)을 terminal `FAILED`로 닫는 것이다. new Attempt(새 실행 시도)는 생성하지 않는다. 자동 재실행은 checkpoint/resume(재개) 부재와 재시도 예산 미결정 때문에 후속 Human Decision Gate(사람 결정 관문) 밖에 둔다.
 
 ### Phase C — PostgreSQL coordination limit(조정 한계) — gated(관문 대기)
 

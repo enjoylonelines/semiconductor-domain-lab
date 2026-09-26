@@ -198,7 +198,7 @@ class AsyncLifecycleTests(unittest.TestCase):
 
 
 class OpenStaSubprocessAdapterTests(unittest.TestCase):
-    fixture_dir = Path(__file__).parents[1] / "docs/evidence/2026-09-24-real-sta"
+    fixture_dir = Path(__file__).parents[2] / "docs/evidence/2026-09-24-real-sta"
     sta_path = Path("/tmp/eda-opensta-20260924/build/sta")
     liberty_path = Path("/tmp/eda-opensta-20260924/examples/sky130hd_tt.lib.gz")
 

@@ -8,7 +8,7 @@ from eda_lab.service import JobService
 from eda_lab.store import Store
 
 
-EVIDENCE = Path(__file__).resolve().parents[1] / "docs/evidence/2026-09-24-real-sta"
+EVIDENCE = Path(__file__).resolve().parents[2] / "docs/evidence/2026-09-24-real-sta"
 
 
 class OpenStaSetupMaxTests(unittest.TestCase):
