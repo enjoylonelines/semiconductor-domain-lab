@@ -105,7 +105,7 @@ class Store:
         return self._now()
 
     def create_run(self, job_id: str, design_id: str, ip_family: str, flow_name: str, spec_hash: str | None = None,
-                   max_in_flight: int | None = None) -> bool:
+                   max_in_flight: int | None = None, spec_payload: dict[str, Any] | None = None) -> bool:
         with self._lock:
             if max_in_flight is None:
                 cursor = self.connection.execute(

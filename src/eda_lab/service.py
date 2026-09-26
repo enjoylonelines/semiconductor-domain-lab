@@ -25,7 +25,7 @@ class IdempotencyConflict(RuntimeError):
 
 
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False, backpressure_retry_after_seconds: float = 1.0):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False, backpressure_retry_after_seconds: float = 1.0, execution_mode: str = "local"):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
@@ -34,6 +34,9 @@ class JobService:
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
         self.max_in_flight = max_in_flight
+        if execution_mode not in {"local", "external"}:
+            raise ValueError("execution_mode must be local or external")
+        self.execution_mode = execution_mode
         if backpressure_retry_after_seconds <= 0:
             raise ValueError("backpressure_retry_after_seconds must be positive")
         self.backpressure_retry_after_seconds = backpressure_retry_after_seconds
@@ -79,6 +82,18 @@ class JobService:
         return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
     @staticmethod
+    def spec_payload(spec: JobSpec) -> dict:
+        return {
+            "job_id": spec.job_id, "design_id": spec.design_id, "ip_family": spec.ip_family,
+            "flow_name": spec.flow_name, "corner": spec.corner, "worst_slack": spec.worst_slack,
+            "unit": spec.unit, "duration_seconds": spec.duration_seconds,
+        }
+
+    @staticmethod
+    def spec_from_payload(payload: dict) -> JobSpec:
+        return JobSpec(**payload)
+
+    @staticmethod
     def _trust_status(result, process_exit_code: int | None) -> str:
         if result.parse_status == "INVALID" or result.semantic_status == "INVALID":
             return "INVALID"
@@ -120,7 +135,7 @@ class JobService:
             try:
                 created = self.store.create_run(
                     spec.job_id, spec.design_id, spec.ip_family, spec.flow_name, spec_hash,
-                    max_in_flight=self.max_in_flight,
+                    max_in_flight=self.max_in_flight, spec_payload=self.spec_payload(spec),
                 )
             except InFlightBudgetExhausted:
                 raise BackpressureError(self.max_in_flight, self.backpressure_retry_after_seconds) from None
@@ -131,9 +146,15 @@ class JobService:
                 if existing.get("spec_hash") != spec_hash:
                     raise IdempotencyConflict("idempotency key reused with different spec")
                 return existing
-            future = self.executor.submit(self._execute, spec)
-            self.futures[spec.job_id] = future
+            if self.execution_mode == "local":
+                self.execute_claimed(spec)
             return self.store.get_run(spec.job_id) or {}
+
+    def execute_claimed(self, spec: JobSpec):
+        """Execute a Run already claimed by an external worker scheduler."""
+        future = self.executor.submit(self._execute, spec)
+        self.futures[spec.job_id] = future
+        return future
 
     def cancel(self, job_id: str) -> bool:
         with self.lock:
