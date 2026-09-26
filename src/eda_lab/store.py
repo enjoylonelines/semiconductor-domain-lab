@@ -12,6 +12,7 @@ class InFlightBudgetExhausted(RuntimeError):
 
 class Store:
     def __init__(self, path: str | Path = ":memory:", now=None):
+        self._closed = False
         self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self._lock = threading.RLock()
@@ -72,6 +73,28 @@ class Store:
         self._add_column_if_missing("attempts", "process_pid", "INTEGER")
         self._add_column_if_missing("attempts", "process_started_at", "REAL")
         self.connection.commit()
+
+    def close(self) -> None:
+        """Release this Store's SQLite connection. Safe to call more than once."""
+        with self._lock:
+            if not self._closed:
+                self.connection.close()
+                self._closed = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.close()
+
+    def __del__(self) -> None:
+        # This is a last-resort guard for short-lived local callers. Services should
+        # use close() so their executor has finished before the database closes.
+        try:
+            if hasattr(self, "_lock"):
+                self.close()
+        except BaseException:
+            pass
 
     def _add_column_if_missing(self, table: str, column: str, definition: str) -> None:
         columns = {row["name"] for row in self.connection.execute(f"PRAGMA table_info({table})")}

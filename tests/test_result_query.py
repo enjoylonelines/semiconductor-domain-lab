@@ -13,6 +13,9 @@ class ResultQueryTests(unittest.TestCase):
         self.store.create_revision("r1", "design-a", "abc", "lib-1", "sdc-1", "OpenSTA-3.1", "parser-1")
         self.store.create_revision("r2", "design-a", "def", "lib-1", "sdc-1", "OpenSTA-3.1", "parser-1")
 
+    def tearDown(self):
+        self.store.close()
+
     def test_strong_finding_identity_keeps_different_corners_as_new_violations(self):
         self.store.save_findings("r1", [("run-1", "A/Q", "B/D", "clk", "setup", "SS", -0.1)])
         self.store.save_findings("r2", [("run-2", "A/Q", "B/D", "clk", "setup", "TT", -0.2)])
@@ -78,6 +81,8 @@ class ResultQueryTests(unittest.TestCase):
                 thread.join(timeout=2)
             self.assertEqual(sorted(outcomes), [False, True])
             self.assertEqual(owner.get_run("concurrent-terminal")["attempts"][-1]["status"], "SUCCEEDED")
+            contender.close()
+            owner.close()
 
 
 if __name__ == "__main__":

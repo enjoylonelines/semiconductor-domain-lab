@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import sqlite3
 from pathlib import Path
 from eda_lab.models import AdapterRunResult, JobSpec
 from eda_lab.parser import parse_report, parse_report_streaming
@@ -8,6 +9,22 @@ from eda_lab.runner import SyntheticTimingAdapter
 from eda_lab.store import Store
 
 class Stage1Tests(unittest.TestCase):
+    def test_store_close_is_idempotent_and_rejects_further_database_use(self):
+        store = Store()
+        store.close()
+        store.close()
+        with self.assertRaises(sqlite3.ProgrammingError):
+            store.get_run("closed")
+
+    def test_service_close_finishes_local_work_before_closing_its_store(self):
+        service = JobService(Store(), max_workers=1)
+        spec = JobSpec("close-after-work", "design-a", "PCIe", "synthetic-timing", "TT_25C", 0.12, "ns", 0.01)
+        service.submit(spec)
+        service.close()
+        self.assertTrue(service.futures[spec.job_id].done())
+        with self.assertRaises(sqlite3.ProgrammingError):
+            service.get(spec.job_id)
+
     def test_adapter_process_exit_overrides_report_claimed_exit_value(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "claimed-zero-exit.report"

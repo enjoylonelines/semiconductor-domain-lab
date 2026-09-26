@@ -29,7 +29,8 @@ class ResultQueryApiTests(unittest.TestCase):
         store.create_revision("base", "design-a", "a", "lib", "sdc", "OpenSTA-3.1", "parser-1")
         store.create_revision("candidate", "design-a", "b", "lib", "sdc", "OpenSTA-3.1", "parser-1")
         store.save_findings("candidate", [("run", "A/Q", "B/D", "clk", "setup", "TT", -0.1)])
-        ApiHandler.service = JobService(store)
+        self.initial_service = JobService(store)
+        ApiHandler.service = self.initial_service
         self.store = store
         self.server = create_server(port=0)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -38,6 +39,9 @@ class ResultQueryApiTests(unittest.TestCase):
     def tearDown(self):
         self.server.shutdown()
         self.server.server_close()
+        ApiHandler.service.close()
+        if ApiHandler.service is not self.initial_service:
+            self.initial_service.close()
 
     def test_new_violation_endpoint_does_not_change_storage_policy_by_default(self):
         with urlopen(f"http://127.0.0.1:{self.server.server_port}/revisions/candidate/new-violations?baseline=base") as response:

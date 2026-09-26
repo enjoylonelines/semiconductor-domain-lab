@@ -46,6 +46,17 @@ class JobService:
         if callable(add_observer):
             add_observer(self._record_adapter_process)
 
+    def close(self) -> None:
+        """Finish submitted local work, then release the Store connection."""
+        self.executor.shutdown(wait=True)
+        self.store.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:
+        self.close()
+
     def _record_adapter_process(self, pid: int, started_at: float) -> None:
         context = getattr(self._process_context, "attempt", None)
         if context is None:
