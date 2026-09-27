@@ -23,7 +23,7 @@ Docker runtime(도커 실행 환경)이 현재 2 vCPU와 약 1.9 GiB memory(메�
 
 Agent마다 `pids_limit=64`, read-only root filesystem(읽기 전용 루트 파일 시스템), `tmpfs` temporary workspace(임시 작업 공간), independent artifact volume(독립 산출물 볼륨)을 둔다. Agent들은 internal Docker network(내부 도커 네트워크)에서 PostgreSQL만 공유한다. host port(호스트 포트)는 노출하지 않는다.
 
-OpenSTA(정적 타이밍 분석 도구) binary(바이너리)는 이 M1 container profile(컨테이너 프로필)에 아직 포함하지 않는다. 현재 probe(탐침)는 Agent registration(에이전트 등록), heartbeat(심장박동), session fencing(세션 차단), network isolation(네트워크 격리)만 검증한다. actual OpenSTA execution(실제 OpenSTA 실행)은 Linux-compatible tool image(리눅스 호환 도구 이미지), immutable input mount(불변 입력 마운트), artifact retrieval contract(산출물 회수 계약)를 준비한 뒤 별도 M1-E2E로 연다.
+OpenSTA(정적 타이밍 분석 도구) binary(바이너리)는 M1 Linux ARM tool image(리눅스 ARM 도구 이미지)에 고정 revision(고정 리비전)으로 포함했다. 기존 immutable fixture(불변 픽스처)를 image(이미지)에 복사하고 Agent별 artifact volume(산출물 볼륨)을 work root(작업 루트)로 사용해 실제 Run(작업)을 실행했다. 이 경로의 E2E baseline(종단 간 기준선)은 `docs/evidence/2026-09-27-multihost-m1-opensta-e2e.md`에 기록한다.
 
 ## M1 environment probe(환경 탐침) result(결과)
 
@@ -38,4 +38,4 @@ The environment(환경)은 `postgres:16-alpine@sha256:721873…6080ea`와 `pytho
 | network fault(네트워크 장애) | Agent A를 internal network(내부 네트워크)에서 5초 분리하자 A session lease(세션 리스)는 expired(만료), B session lease는 active(활성) |
 | restart(재시작) | Agent A 재연결·재시작 뒤 새 session ID(세션 식별자)를 등록해 이전 A session을 fence(차단) |
 
-이 결과는 `docker network disconnect` 기반 agent-to-database connectivity loss(에이전트-데이터베이스 연결 손실)만 다룬다. database restart(데이터베이스 재시작), partition healing(분할 복구), actual OpenSTA child process(실제 OpenSTA 하위 프로세스), remote report collection(원격 보고서 회수), physical-host failure(물리 호스트 장애)는 아직 검증하지 않았다.
+이 결과는 `docker network disconnect` 기반 agent-to-database connectivity loss(에이전트-데이터베이스 연결 손실)를 다룬다. 이후 fixed Linux ARM OpenSTA image(고정 리눅스 ARM OpenSTA 이미지)에서 Agent A/B가 각각 실제 fixture(픽스처)를 `SUCCEEDED/TRUSTED`로 끝내는 baseline(기준선)도 추가했다. database restart(데이터베이스 재시작), partition healing(분할 복구), Agent loss during actual OpenSTA child(실제 OpenSTA 하위 프로세스 중 에이전트 손실), remote report collection(원격 보고서 회수), physical-host failure(물리 호스트 장애)는 아직 검증하지 않았다.

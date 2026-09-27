@@ -21,7 +21,12 @@ def run_worker() -> None:
         store, max_workers=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")),
         resource_slots=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")), max_in_flight=int(os.environ.get("EDA_MAX_IN_FLIGHT", "8")),
         worker_id=os.environ.get("EDA_WORKER_ID", "worker"), execution_mode="external",
-        adapter=OpenStaSubprocessAdapter(sta_path=sta_path, liberty_path=liberty_path, fixture_dir=fixture_dir),
+        adapter=OpenStaSubprocessAdapter(
+            sta_path=sta_path,
+            liberty_path=liberty_path,
+            fixture_dir=fixture_dir,
+            work_root=os.environ.get("EDA_OPENSTA_WORK_ROOT"),
+        ),
     )
     try:
         concurrency = int(os.environ.get("EDA_WORKER_CONCURRENCY", "4"))

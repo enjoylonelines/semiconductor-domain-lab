@@ -1,7 +1,7 @@
 # Same-host recovery closure(동일 호스트 복구 보정)와 multi-host readiness(다중 호스트 준비) 계획
 
 작성일: 2026-09-27
-상태: same-host correction(동일 호스트 보정) 구현·검증 완료; multi-host M0(다중 호스트 M0) logical-agent contract(논리 에이전트 계약) 구현·검증 완료; M1 single-machine multi-node environment probe(단일 머신 다중 노드 환경 탐침) 완료; actual OpenSTA M1-E2E(실제 OpenSTA M1 종단 간 검증) 대기
+상태: same-host correction(동일 호스트 보정) 구현·검증 완료; multi-host M0(다중 호스트 M0) logical-agent contract(논리 에이전트 계약) 구현·검증 완료; M1 single-machine multi-node environment probe(단일 머신 다중 노드 환경 탐침) 완료; actual OpenSTA M1-E2E baseline(실제 OpenSTA M1 종단 간 기준선) 완료; M1 fault-injection(장애 주입) 대기
 
 원본 기준(source of truth, 원본 기준)은 이 repository(저장소)다. Career OS(커리어 운영체제)에는 commit(커밋), evidence(근거), decision(결정)의 링크와 제한 요약만 적재한다.
 
@@ -83,6 +83,8 @@ M0 scope(범위)는 shared PostgreSQL(공유 PostgreSQL)과 two logical Host Age
 Prediction(예측): Host Agent(호스트 에이전트)가 host identity(호스트 식별)와 execution manifest(실행 명세)를 기록하면, central Worker(중앙 워커)는 remote PID를 관측하지 않고도 stale attempt(오래된 실행 시도)의 재조정 권한을 안전하게 판정할 수 있다.
 
 Falsification(반증): agent loss(에이전트 손실), host reboot(호스트 재부팅), network partition(네트워크 분할), duplicated completion(중복 완료) 중 하나에서 stale Agent(오래된 에이전트)가 accepted completion(승인된 완료)을 기록하거나, 새 Attempt(새 실행 시도)가 confirmed-live execution(생존 확인 실행)과 overlap(중첩)하면 구조를 기각·보강한다.
+
+M1 baseline(기준선): fixed Linux ARM OpenSTA image(고정 리눅스 ARM OpenSTA 이미지)에서 Agent A/B가 각각 실제 fixture(픽스처)를 `SUCCEEDED/TRUSTED`로 끝내고 Agent별 artifact volume(산출물 볼륨)에 report(보고서)를 남겼다. 상세 결과는 `docs/evidence/2026-09-27-multihost-m1-opensta-e2e.md`에 기록한다.
 
 Stop condition(종료 조건): two-host fault-injection(2호스트 장애 주입)에서 agent loss + child alive/dead(에이전트 손실 + 하위 프로세스 생존/종료), completion boundary loss(완료 경계 손실), host reboot simulation(호스트 재부팅 모의)을 한 번씩 실행하고, 각각의 Run/Attempt/manifest row(행)와 limitation(한계)을 기록한 뒤 Human Decision Gate로 멈춘다. Kafka(카프카)는 이 Cycle의 기본 구성 요소가 아니다. 2026-09-26 Phase C(단계 C)의 PostgreSQL coordination limit(조정 한계) 측정은 Kafka trigger(카프카 조건)를 충족하지 않았다.
 

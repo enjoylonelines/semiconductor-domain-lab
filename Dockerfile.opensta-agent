@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# Pinned source revisions match docs/evidence/2026-09-24-real-sta/manifest.json.
+FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffbb1bf33ca3
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG OPENSTA_REVISION=396536743ff33852cd8af176988f077219bc8b8d
+ARG CUDD_TARBALL_SHA256=b8e966b4562c96a03e7fbea239729587d7b395d53cadcc39a7203b49cf7eeb69
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bison ca-certificates cmake flex g++ git libeigen3-dev libfl-dev libfmt-dev \
+    make pkg-config procps python3 python3-pip python3-venv swig tcl-dev wget zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# OpenSTA's pinned official Dockerfile builds CUDD 3.0.0 from this release tarball.
+RUN wget -q https://raw.githubusercontent.com/davidkebo/cudd/main/cudd_versions/cudd-3.0.0.tar.gz -O /tmp/cudd.tar.gz \
+    && echo "$CUDD_TARBALL_SHA256  /tmp/cudd.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/cudd.tar.gz -C /opt \
+    && mv /opt/cudd-3.0.0 /opt/cudd \
+    && rm /tmp/cudd.tar.gz \
+    && cd /opt/cudd && ./configure && make -j2
+
+RUN git clone https://github.com/parallaxsw/OpenSTA.git /opt/opensta \
+    && git -C /opt/opensta checkout "$OPENSTA_REVISION" \
+    && cmake -S /opt/opensta -B /opt/opensta/build -DCUDD_DIR=/opt/cudd -DFLEX_INCLUDE_DIR=/usr/include \
+    && cmake --build /opt/opensta/build --parallel 2 \
+    && /opt/opensta/build/sta -help >/dev/null
+
+WORKDIR /app
+COPY pyproject.toml ./
+COPY src ./src
+COPY docs/evidence/2026-09-24-real-sta ./docs/evidence/2026-09-24-real-sta
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir .
+ENV PATH=/opt/venv/bin:$PATH

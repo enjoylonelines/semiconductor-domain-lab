@@ -69,6 +69,7 @@ class OpenStaSubprocessAdapter:
         timeout_seconds: float = 30,
         termination_grace_seconds: float = 1,
         process_observer: Callable[[int, float], None] | None = None,
+        work_root: Path | None = None,
     ):
         self.sta_path = Path(sta_path)
         self.liberty_path = Path(liberty_path)
@@ -78,6 +79,7 @@ class OpenStaSubprocessAdapter:
         self.timeout_seconds = timeout_seconds
         self.termination_grace_seconds = termination_grace_seconds
         self.process_observer = process_observer
+        self.work_root = Path(work_root) if work_root is not None else None
         self._additional_process_observers: list[Callable[[int, float], None]] = []
         self._processes: dict[str, subprocess.Popen] = {}
         self._cancelled_jobs: set[str] = set()
@@ -131,7 +133,11 @@ class OpenStaSubprocessAdapter:
         script = self._required_fixture(self.script_name)
         sdc = self._required_fixture(self.sdc_name)
         netlist = self._required_fixture("tiny_mapped.v")
-        directory = Path(tempfile.mkdtemp(prefix=f"eda-opensta-{spec.job_id}-"))
+        if self.work_root is not None:
+            self.work_root.mkdir(parents=True, exist_ok=True)
+            directory = Path(tempfile.mkdtemp(prefix=f"eda-opensta-{spec.job_id}-", dir=self.work_root))
+        else:
+            directory = Path(tempfile.mkdtemp(prefix=f"eda-opensta-{spec.job_id}-"))
         for source in (script, sdc, netlist):
             shutil.copy2(source, directory / source.name)
 

@@ -21,12 +21,19 @@ services:
   host-agent-a:
     build:
       context: .
-      dockerfile: Dockerfile.host-agent
+      dockerfile: Dockerfile.opensta-agent
+    command: ["python3", "-m", "eda_lab", "worker"]
     environment:
       EDA_POSTGRES_DSN: postgresql://eda:eda@postgres:5432/eda_m1
       EDA_HOST_ID: m1-agent-a
       EDA_HOST_EPOCH: boot-a
       EDA_AGENT_LEASE_SECONDS: "3"
+      EDA_OPENSTA_PATH: /opt/opensta/build/sta
+      EDA_OPENSTA_LIBERTY_PATH: /opt/opensta/examples/sky130hd_tt.lib.gz
+      EDA_OPENSTA_FIXTURE_DIR: /app/docs/evidence/2026-09-24-real-sta
+      EDA_OPENSTA_WORK_ROOT: /artifacts
+      EDA_WORKER_CONCURRENCY: "1"
+      EDA_MAX_IN_FLIGHT: "2"
     networks: [eda_internal]
     depends_on:
       postgres:
@@ -41,12 +48,19 @@ services:
   host-agent-b:
     build:
       context: .
-      dockerfile: Dockerfile.host-agent
+      dockerfile: Dockerfile.opensta-agent
+    command: ["python3", "-m", "eda_lab", "worker"]
     environment:
       EDA_POSTGRES_DSN: postgresql://eda:eda@postgres:5432/eda_m1
       EDA_HOST_ID: m1-agent-b
       EDA_HOST_EPOCH: boot-b
       EDA_AGENT_LEASE_SECONDS: "3"
+      EDA_OPENSTA_PATH: /opt/opensta/build/sta
+      EDA_OPENSTA_LIBERTY_PATH: /opt/opensta/examples/sky130hd_tt.lib.gz
+      EDA_OPENSTA_FIXTURE_DIR: /app/docs/evidence/2026-09-24-real-sta
+      EDA_OPENSTA_WORK_ROOT: /artifacts
+      EDA_WORKER_CONCURRENCY: "1"
+      EDA_MAX_IN_FLIGHT: "2"
     networks: [eda_internal]
     depends_on:
       postgres:

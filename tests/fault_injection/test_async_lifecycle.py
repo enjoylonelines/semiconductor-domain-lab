@@ -219,6 +219,22 @@ class OpenStaSubprocessAdapterTests(unittest.TestCase):
         self.assertEqual(len(result.execution_provenance["sdc_sha256"]), 64)
 
     @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
+    def test_real_opensta_workload_writes_artifact_below_configured_work_root(self):
+        with tempfile.TemporaryDirectory(prefix="eda-opensta-artifacts-") as work_root:
+            adapter = OpenStaSubprocessAdapter(
+                sta_path=self.sta_path,
+                liberty_path=self.liberty_path,
+                fixture_dir=self.fixture_dir,
+                timeout_seconds=2,
+                work_root=Path(work_root),
+            )
+
+            result = adapter.run(spec("real-opensta-artifact-root"))
+
+            self.assertEqual(result.process_exit_code, 0)
+            self.assertTrue(result.artifact_path.is_relative_to(Path(work_root)))
+
+    @unittest.skipUnless(sta_path.is_file() and liberty_path.is_file(), "OpenSTA integration fixture is unavailable")
     def test_timeout_terminates_a_real_opensta_child_before_the_report_finishes(self):
         with tempfile.TemporaryDirectory(prefix="eda-opensta-timeout-test-") as directory_name:
             fixture_dir = Path(directory_name)
