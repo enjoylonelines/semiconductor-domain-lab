@@ -286,26 +286,6 @@ class Store:
             self.connection.commit()
             return cursor.rowcount == 1
 
-    def list_expired_leased_attempts(self, now: float | None = None) -> list[tuple[str, int]]:
-        cutoff = self._now() if now is None else now
-        with self._lock:
-            return [tuple(row) for row in self.connection.execute(
-                "SELECT job_id, attempt_no FROM attempts WHERE status = 'RUNNING' AND lease_token IS NOT NULL "
-                "AND lease_expires_at < ? ORDER BY job_id, attempt_no", (cutoff,)
-            ).fetchall()]
-
-    def create_revision(self, revision_id: str, design_id: str, source_revision: str, liberty_hash: str,
-                        sdc_hash: str, tool_version: str, parser_version: str) -> None:
-        with self._lock:
-            self.connection.execute(
-                "INSERT INTO revisions VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (revision_id, design_id, source_revision, liberty_hash, sdc_hash, tool_version, parser_version),
-            )
-            self.connection.commit()
-
-    def save_findings(self, revision_id: str, findings: list[tuple[str, str, str, str, str, str, float]]) -> None:
-        with self._lock:
-            try:
     def finalize_recovery(self, job_id: str, attempt_no: int, token: str, *, error_type: str, error: str) -> bool:
         now = self._now()
         with self._lock:
@@ -374,6 +354,26 @@ class Store:
                 self.connection.rollback()
                 raise
 
+    def list_expired_leased_attempts(self, now: float | None = None) -> list[tuple[str, int]]:
+        cutoff = self._now() if now is None else now
+        with self._lock:
+            return [tuple(row) for row in self.connection.execute(
+                "SELECT job_id, attempt_no FROM attempts WHERE status = 'RUNNING' AND lease_token IS NOT NULL "
+                "AND lease_expires_at < ? ORDER BY job_id, attempt_no", (cutoff,)
+            ).fetchall()]
+
+    def create_revision(self, revision_id: str, design_id: str, source_revision: str, liberty_hash: str,
+                        sdc_hash: str, tool_version: str, parser_version: str) -> None:
+        with self._lock:
+            self.connection.execute(
+                "INSERT INTO revisions VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (revision_id, design_id, source_revision, liberty_hash, sdc_hash, tool_version, parser_version),
+            )
+            self.connection.commit()
+
+    def save_findings(self, revision_id: str, findings: list[tuple[str, str, str, str, str, str, float]]) -> None:
+        with self._lock:
+            try:
                 self.connection.executemany(
                     "INSERT INTO findings(revision_id, run_id, startpoint, endpoint, path_group, analysis_type, corner, slack_ns) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
