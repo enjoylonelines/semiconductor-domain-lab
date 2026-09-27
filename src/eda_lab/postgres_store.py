@@ -42,8 +42,11 @@ class PostgresStore:
               updated_at double precision NOT NULL DEFAULT 0, lease_owner text, lease_token text,
               lease_expires_at double precision, heartbeat_at double precision, process_pid integer, process_started_at double precision,
               process_identity text, process_group_id integer, orphan_deadline double precision,
+              execution_host_id text, execution_host_epoch text, execution_host_session text, execution_id text,
               recovery_owner text, recovery_token text, recovery_expires_at double precision,
               PRIMARY KEY(job_id, attempt_no));
+            CREATE TABLE IF NOT EXISTS eda_host_sessions (session_id text PRIMARY KEY, host_id text NOT NULL, host_epoch text NOT NULL, heartbeat_at double precision NOT NULL, lease_expires_at double precision NOT NULL);
+            CREATE TABLE IF NOT EXISTS eda_hosts (host_id text PRIMARY KEY, current_epoch text NOT NULL, current_session_id text NOT NULL, updated_at double precision NOT NULL);
             CREATE TABLE IF NOT EXISTS eda_metric_rows (id bigserial PRIMARY KEY, job_id text NOT NULL REFERENCES eda_runs(job_id), metric_name text NOT NULL, stage text NOT NULL, corner text NOT NULL, value double precision NOT NULL, unit text NOT NULL);
             CREATE INDEX IF NOT EXISTS idx_eda_metric_rows_stage_corner ON eda_metric_rows(stage, corner, metric_name);
             CREATE TABLE IF NOT EXISTS eda_revisions (revision_id text PRIMARY KEY, design_id text NOT NULL, source_revision text NOT NULL, liberty_hash text NOT NULL, sdc_hash text NOT NULL, tool_version text NOT NULL, parser_version text NOT NULL);
@@ -56,6 +59,10 @@ class PostgresStore:
                 ("process_identity", "text"),
                 ("process_group_id", "integer"),
                 ("orphan_deadline", "double precision"),
+                ("execution_host_id", "text"),
+                ("execution_host_epoch", "text"),
+                ("execution_host_session", "text"),
+                ("execution_id", "text"),
             ):
                 c.execute(f"ALTER TABLE eda_attempts ADD COLUMN IF NOT EXISTS {column} {definition}")
 
@@ -125,6 +132,22 @@ class PostgresStore:
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
             c.execute("UPDATE eda_attempts SET process_pid=%s,process_started_at=%s,process_identity=%s,process_group_id=%s,orphan_deadline=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s", (pid,started_at,process_identity,process_group_id,orphan_deadline,self.now(),job_id,attempt_no,token)); return c.rowcount==1
 
+    def start_host_session(self, host_id, host_epoch, session_id, ttl_seconds):
+        now = self.now()
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("INSERT INTO eda_host_sessions(session_id,host_id,host_epoch,heartbeat_at,lease_expires_at) VALUES(%s,%s,%s,%s,%s)", (session_id,host_id,host_epoch,now,now+ttl_seconds))
+            c.execute("INSERT INTO eda_hosts(host_id,current_epoch,current_session_id,updated_at) VALUES(%s,%s,%s,%s) ON CONFLICT(host_id) DO UPDATE SET current_epoch=EXCLUDED.current_epoch,current_session_id=EXCLUDED.current_session_id,updated_at=EXCLUDED.updated_at", (host_id,host_epoch,session_id,now))
+
+    def heartbeat_host_session(self, session_id, ttl_seconds):
+        now = self.now()
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_host_sessions SET heartbeat_at=%s,lease_expires_at=%s WHERE session_id=%s AND EXISTS (SELECT 1 FROM eda_hosts WHERE current_session_id=eda_host_sessions.session_id)", (now,now+ttl_seconds,session_id)); return c.rowcount==1
+
+    def record_attempt_execution(self, job_id, attempt_no, token, *, host_id, host_epoch, session_id, execution_id):
+        now = self.now()
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_attempts SET execution_host_id=%s,execution_host_epoch=%s,execution_host_session=%s,execution_id=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s AND EXISTS (SELECT 1 FROM eda_host_sessions s JOIN eda_hosts h ON h.current_session_id=s.session_id WHERE s.session_id=%s AND s.host_id=%s AND s.host_epoch=%s AND s.lease_expires_at >= %s)", (host_id,host_epoch,session_id,execution_id,now,job_id,attempt_no,token,session_id,host_id,host_epoch,now)); return c.rowcount==1
+
     def transition_attempt(self, job_id, attempt_no, token, status, *, error_type=None, error=None, artifact_path=None, retry_class=None):
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
             now = self.now()
@@ -153,7 +176,7 @@ class PostgresStore:
             return c.rowcount == 1
 
     def finalize_attempt_and_run(self, job_id, attempt_no, token, attempt_status, run_status, *, error_type=None,
-                                 error=None, artifact_path=None, retry_class=None, run_fields=None):
+                                 error=None, artifact_path=None, retry_class=None, run_fields=None, execution_owner=None):
         allowed = {"parse_status","check_status","completeness","semantic_status","provenance_status","trust_status","provenance","artifact_path","error"}
         fields = {k: v for k, v in (run_fields or {}).items() if k in allowed}
         now = self.now()
@@ -163,8 +186,13 @@ class PostgresStore:
             fields.setdefault("artifact_path", artifact_path)
         values = [json.dumps(v) if k == "provenance" else v for k, v in fields.items()]
         assignments = ", ".join(f"{k} = %s" + ("::jsonb" if k == "provenance" else "") for k in fields)
+        owner_clause = ""
+        owner_values = []
+        if execution_owner is not None:
+            owner_clause = " AND execution_host_id=%s AND execution_host_epoch=%s AND execution_host_session=%s AND EXISTS (SELECT 1 FROM eda_host_sessions s JOIN eda_hosts h ON h.current_session_id=s.session_id WHERE s.session_id=%s AND s.lease_expires_at >= %s)"
+            owner_values = [execution_owner["host_id"], execution_owner["host_epoch"], execution_owner["session_id"], execution_owner["session_id"], now]
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
-            c.execute("UPDATE eda_attempts SET status=%s,error_type=%s,error=%s,artifact_path=COALESCE(%s,artifact_path),retry_class=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s AND lease_expires_at >= %s AND (recovery_token IS NULL OR recovery_expires_at < %s)", (attempt_status,error_type,error,artifact_path,retry_class,now,job_id,attempt_no,token,now,now))
+            c.execute("UPDATE eda_attempts SET status=%s,error_type=%s,error=%s,artifact_path=COALESCE(%s,artifact_path),retry_class=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s AND lease_expires_at >= %s AND (recovery_token IS NULL OR recovery_expires_at < %s)" + owner_clause, (attempt_status,error_type,error,artifact_path,retry_class,now,job_id,attempt_no,token,now,now,*owner_values))
             if c.rowcount != 1:
                 return False
             c.execute(f"UPDATE eda_runs SET {assignments} WHERE job_id=%s AND status='RUNNING'", (*values,job_id))

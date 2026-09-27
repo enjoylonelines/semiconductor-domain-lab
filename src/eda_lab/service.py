@@ -51,6 +51,7 @@ class JobService:
         self.lock = Lock()
         self.futures = {}
         self._process_context = local()
+        self.execution_owner: dict[str, str] | None = None
         add_observer = getattr(self.adapter, "add_process_observer", None)
         if callable(add_observer):
             add_observer(self._record_adapter_process)
@@ -59,6 +60,14 @@ class JobService:
         """Finish submitted local work, then release the Store connection."""
         self.executor.shutdown(wait=True)
         self.store.close()
+
+    def set_execution_owner(self, owner: dict[str, str]) -> None:
+        required = {"host_id", "host_epoch", "session_id"}
+        if set(owner) != required or not all(owner.values()):
+            raise ValueError("execution owner requires host_id, host_epoch, and session_id")
+        if self.execution_owner is not None and self.execution_owner != owner:
+            raise RuntimeError("a JobService instance cannot change Host Agent session")
+        self.execution_owner = dict(owner)
 
     def __enter__(self):
         return self
@@ -195,6 +204,10 @@ class JobService:
     def _heartbeat_loop(self, stop: Event, job_id: str, attempt_no: int, lease_token: str) -> None:
         interval = max(self.lease_seconds / 3, 0.01)
         while not stop.wait(interval):
+            if self.execution_owner is not None and not self.store.heartbeat_host_session(
+                self.execution_owner["session_id"], self.lease_seconds
+            ):
+                return
             if not self.store.heartbeat_attempt(job_id, attempt_no, lease_token, self.lease_seconds):
                 return
 
@@ -206,7 +219,8 @@ class JobService:
                                   run_status: str, **fields) -> None:
         run_fields = fields.pop("run_fields", {})
         if not self.store.finalize_attempt_and_run(
-            job_id, attempt_no, lease_token, attempt_status, run_status, run_fields=run_fields, **fields
+            job_id, attempt_no, lease_token, attempt_status, run_status, run_fields=run_fields,
+            execution_owner=self.execution_owner, **fields
         ):
             raise RuntimeError("attempt and run terminal write lost its lease fence")
 
@@ -224,6 +238,10 @@ class JobService:
                 lease_token = uuid4().hex
                 if not self.store.acquire_attempt_lease(spec.job_id, attempt_no, self.worker_id, lease_token, self.lease_seconds):
                     raise RuntimeError("attempt lease acquisition failed")
+                if self.execution_owner is not None and not self.store.record_attempt_execution(
+                    spec.job_id, attempt_no, lease_token, **self.execution_owner, execution_id=uuid4().hex
+                ):
+                    raise RuntimeError("attempt execution owner registration failed")
                 heartbeat_stop = Event()
                 heartbeat_thread = Thread(
                     target=self._heartbeat_loop, args=(heartbeat_stop, spec.job_id, attempt_no, lease_token), daemon=True
@@ -314,6 +332,7 @@ class JobService:
         skipped_active_lease: list[str] = []
         skipped_recovery_claim: list[str] = []
         orphan_termination_requested: list[str] = []
+        deferred_remote_execution: list[str] = []
         expired_leases = set(self.store.list_expired_leased_attempts())
         for run in self.store.list_stale_running(cutoff):
             future = self.futures.get(run["job_id"])
@@ -327,6 +346,14 @@ class JobService:
                 recovered.append(run["job_id"])
                 continue
             attempt = attempts[-1]
+            if attempt.get("execution_host_session") and (
+                self.execution_owner is None
+                or attempt["execution_host_session"] != self.execution_owner["session_id"]
+            ):
+                # A Host Agent may only observe a child it owns locally. A remote
+                # PID is neither evidence of life nor authorization to signal it.
+                deferred_remote_execution.append(run["job_id"])
+                continue
             if attempt["lease_token"] and (run["job_id"], attempt["attempt_no"]) not in expired_leases:
                 skipped_active_lease.append(run["job_id"])
                 continue
@@ -382,4 +409,6 @@ class JobService:
             result["skipped_recovery_claim"] = skipped_recovery_claim
         if orphan_termination_requested:
             result["orphan_termination_requested"] = orphan_termination_requested
+        if deferred_remote_execution:
+            result["deferred_remote_execution"] = deferred_remote_execution
         return result

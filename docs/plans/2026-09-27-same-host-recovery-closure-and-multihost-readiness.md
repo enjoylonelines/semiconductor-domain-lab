@@ -1,7 +1,7 @@
 # Same-host recovery closure(동일 호스트 복구 보정)와 multi-host readiness(다중 호스트 준비) 계획
 
 작성일: 2026-09-27
-상태: same-host correction(동일 호스트 보정) 구현·검증 완료; multi-host cycle(다중 호스트 사이클) Human Decision Gate(사람 결정 관문) 대기
+상태: same-host correction(동일 호스트 보정) 구현·검증 완료; multi-host M0(다중 호스트 M0) logical-agent contract(논리 에이전트 계약) 구현·검증 완료; physical-host M1(물리 호스트 M1) 환경 대기
 
 원본 기준(source of truth, 원본 기준)은 이 repository(저장소)다. Career OS(커리어 운영체제)에는 commit(커밋), evidence(근거), decision(결정)의 링크와 제한 요약만 적재한다.
 
@@ -72,11 +72,13 @@ PostgreSQL(포스트그레스큐엘)은 Run/Attempt state(작업/실행 시도 �
 
 ### Human Decision Gate(사람 결정 관문)
 
-다음 중 하나가 실제 요구나 측정으로 확인되기 전에는 multi-host implementation(다중 호스트 구현)을 시작하지 않는다.
+사용자 승인으로 M0 logical-agent implementation(논리 에이전트 구현)을 시작했다. 다음 중 하나가 실제 요구나 측정으로 확인되기 전에는 M1 physical-host implementation(물리 호스트 구현)을 시작하지 않는다.
 
 1. 서로 다른 두 host(호스트)에 실제 OpenSTA execution(실행)을 배치해야 하는 운영 요구가 승인된다.
 2. single-host resource-aware concurrency(단일 호스트 자원 인지 동시성)의 CPU/memory/license slot(중앙 처리 장치/메모리/라이선스 슬롯) 한계가 workload(작업부하)로 확인된다.
 3. host failure domain(호스트 장애 영역)을 분리해야 한다는 reliability requirement(신뢰성 요구)가 승인된다.
+
+M0 scope(범위)는 shared PostgreSQL(공유 PostgreSQL)과 two logical Host Agent(두 논리 호스트 에이전트)다. 각 Agent는 `host_id`, `host_epoch`, `session_id`, `execution_id`를 Attempt(실행 시도)에 기록한다. 새 host epoch(호스트 세대)는 이전 session(세션)의 heartbeat(심장박동)와 terminal completion(종단 완료)을 fence(차단)한다. foreign execution(외부 실행)은 local PID(로컬 PID)로 관측·종료하지 않고 `deferred_remote_execution`으로 남긴다.
 
 Prediction(예측): Host Agent(호스트 에이전트)가 host identity(호스트 식별)와 execution manifest(실행 명세)를 기록하면, central Worker(중앙 워커)는 remote PID를 관측하지 않고도 stale attempt(오래된 실행 시도)의 재조정 권한을 안전하게 판정할 수 있다.
 

@@ -38,8 +38,17 @@ class Store:
           retry_class TEXT, started_at REAL NOT NULL DEFAULT 0, updated_at REAL NOT NULL DEFAULT 0,
           lease_owner TEXT, lease_token TEXT, lease_expires_at REAL, heartbeat_at REAL,
           process_pid INTEGER, process_started_at REAL, process_identity TEXT, process_group_id INTEGER, orphan_deadline REAL,
+          execution_host_id TEXT, execution_host_epoch TEXT, execution_host_session TEXT, execution_id TEXT,
           recovery_owner TEXT, recovery_token TEXT, recovery_expires_at REAL,
           PRIMARY KEY(job_id, attempt_no)
+        );
+        CREATE TABLE IF NOT EXISTS host_sessions (
+          session_id TEXT PRIMARY KEY, host_id TEXT NOT NULL, host_epoch TEXT NOT NULL,
+          heartbeat_at REAL NOT NULL, lease_expires_at REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS hosts (
+          host_id TEXT PRIMARY KEY, current_epoch TEXT NOT NULL, current_session_id TEXT NOT NULL,
+          updated_at REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS metric_rows (
           id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL REFERENCES runs(job_id),
@@ -76,6 +85,10 @@ class Store:
         self._add_column_if_missing("attempts", "process_identity", "TEXT")
         self._add_column_if_missing("attempts", "process_group_id", "INTEGER")
         self._add_column_if_missing("attempts", "orphan_deadline", "REAL")
+        self._add_column_if_missing("attempts", "execution_host_id", "TEXT")
+        self._add_column_if_missing("attempts", "execution_host_epoch", "TEXT")
+        self._add_column_if_missing("attempts", "execution_host_session", "TEXT")
+        self._add_column_if_missing("attempts", "execution_id", "TEXT")
         self._add_column_if_missing("attempts", "recovery_owner", "TEXT")
         self._add_column_if_missing("attempts", "recovery_token", "TEXT")
         self._add_column_if_missing("attempts", "recovery_expires_at", "REAL")
@@ -251,6 +264,51 @@ class Store:
             self.connection.commit()
             return cursor.rowcount == 1
 
+    def start_host_session(self, host_id: str, host_epoch: str, session_id: str, ttl_seconds: float) -> None:
+        now = self._now()
+        with self._lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                self.connection.execute(
+                    "INSERT INTO host_sessions(session_id, host_id, host_epoch, heartbeat_at, lease_expires_at) VALUES (?, ?, ?, ?, ?)",
+                    (session_id, host_id, host_epoch, now, now + ttl_seconds),
+                )
+                self.connection.execute(
+                    "INSERT INTO hosts(host_id, current_epoch, current_session_id, updated_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(host_id) DO UPDATE SET current_epoch = excluded.current_epoch, "
+                    "current_session_id = excluded.current_session_id, updated_at = excluded.updated_at",
+                    (host_id, host_epoch, session_id, now),
+                )
+                self.connection.commit()
+            except Exception:
+                self.connection.rollback()
+                raise
+
+    def heartbeat_host_session(self, session_id: str, ttl_seconds: float) -> bool:
+        now = self._now()
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE host_sessions SET heartbeat_at = ?, lease_expires_at = ? WHERE session_id = ? "
+                "AND EXISTS (SELECT 1 FROM hosts WHERE current_session_id = host_sessions.session_id)",
+                (now, now + ttl_seconds, session_id),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def record_attempt_execution(self, job_id: str, attempt_no: int, token: str, *, host_id: str,
+                                 host_epoch: str, session_id: str, execution_id: str) -> bool:
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE attempts SET execution_host_id = ?, execution_host_epoch = ?, execution_host_session = ?, "
+                "execution_id = ?, updated_at = ? WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' "
+                "AND lease_token = ? AND EXISTS (SELECT 1 FROM host_sessions s JOIN hosts h ON h.current_session_id = s.session_id "
+                "WHERE s.session_id = ? AND s.host_id = ? AND s.host_epoch = ? AND s.lease_expires_at >= ?)",
+                (host_id, host_epoch, session_id, execution_id, self._now(), job_id, attempt_no, token,
+                 session_id, host_id, host_epoch, self._now()),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
     def transition_attempt(self, job_id: str, attempt_no: int, token: str, status: str, *, error_type: str | None = None,
                            error: str | None = None, artifact_path: str | None = None, retry_class: str | None = None) -> bool:
         """Fence terminal state changes to the lease token that owns this Attempt."""
@@ -315,7 +373,8 @@ class Store:
     def finalize_attempt_and_run(self, job_id: str, attempt_no: int, token: str, attempt_status: str, run_status: str,
                                  *, error_type: str | None = None, error: str | None = None,
                                  artifact_path: str | None = None, retry_class: str | None = None,
-                                 run_fields: dict[str, Any] | None = None) -> bool:
+                                 run_fields: dict[str, Any] | None = None,
+                                 execution_owner: dict[str, str] | None = None) -> bool:
         """Commit a lease-fenced Attempt terminal state and its Run together."""
         now = self._now()
         fields = {key: value for key, value in (run_fields or {}).items() if key in {
@@ -330,14 +389,24 @@ class Store:
         if "provenance" in fields:
             fields["provenance"] = json.dumps(fields["provenance"] or {}, sort_keys=True)
         assignments = ", ".join(f"{key} = ?" for key in fields)
+        owner_clause = ""
+        owner_values: list[Any] = []
+        if execution_owner is not None:
+            owner_clause = (
+                " AND execution_host_id = ? AND execution_host_epoch = ? AND execution_host_session = ? "
+                "AND EXISTS (SELECT 1 FROM host_sessions s JOIN hosts h ON h.current_session_id = s.session_id "
+                "WHERE s.session_id = ? AND s.lease_expires_at >= ?)"
+            )
+            owner_values = [execution_owner["host_id"], execution_owner["host_epoch"], execution_owner["session_id"],
+                            execution_owner["session_id"], now]
         with self._lock:
             self.connection.execute("BEGIN IMMEDIATE")
             try:
                 attempt = self.connection.execute(
                     "UPDATE attempts SET status = ?, error_type = ?, error = ?, artifact_path = COALESCE(?, artifact_path), "
                     "retry_class = ?, updated_at = ? WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' "
-                    "AND lease_token = ? AND lease_expires_at >= ? AND (recovery_token IS NULL OR recovery_expires_at < ?)",
-                    (attempt_status, error_type, error, artifact_path, retry_class, now, job_id, attempt_no, token, now, now),
+                    "AND lease_token = ? AND lease_expires_at >= ? AND (recovery_token IS NULL OR recovery_expires_at < ?)" + owner_clause,
+                    (attempt_status, error_type, error, artifact_path, retry_class, now, job_id, attempt_no, token, now, now, *owner_values),
                 )
                 if attempt.rowcount != 1:
                     self.connection.rollback()
