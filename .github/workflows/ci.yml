@@ -54,12 +54,67 @@ jobs:
           echo "The original contract failure remains blocking."
           echo "Diagnostic retry outcome: ${{ steps.retry.outcome }}" >> "$GITHUB_STEP_SUMMARY"
 
-  opensta-integration:
-    name: Recorded OpenSTA integration and fault injection
+  postgres-integration:
+    name: PostgreSQL integration gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: eda
+          POSTGRES_PASSWORD: eda
+          POSTGRES_DB: eda_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eda -d eda_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked dependencies
+        run: uv sync --frozen
+      - name: Run PostgreSQL API and worker integration path
+        env:
+          EDA_POSTGRES_TEST_DSN: postgresql://eda:eda@127.0.0.1:5432/eda_ci
+        run: PYTHONPATH=src uv run python -W error::ResourceWarning -m unittest tests.integration.test_postgres_operational_path -v
+
+  opensta-postgres-e2e:
+    name: Recorded OpenSTA PostgreSQL E2E gate
     runs-on: [self-hosted, eda-opensta]
     timeout-minutes: 15
     if: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Run recorded real-tool suite
-        run: PYTHONPATH=src python -m unittest tests.test_async_lifecycle.OpenStaSubprocessAdapterTests -v
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - name: Install locked dependencies
+        run: uv sync --frozen
+      - name: Start disposable PostgreSQL
+        run: |
+          docker run --detach --rm --name eda-postgres-e2e \
+            --env POSTGRES_USER=eda --env POSTGRES_PASSWORD=eda --env POSTGRES_DB=eda_e2e \
+            --publish 127.0.0.1::5432 postgres:16
+          for attempt in $(seq 1 20); do
+            if docker exec eda-postgres-e2e pg_isready -U eda -d eda_e2e; then
+              port="$(docker port eda-postgres-e2e 5432/tcp | sed 's/.*://')"
+              echo "EDA_POSTGRES_TEST_DSN=postgresql://eda:eda@127.0.0.1:${port}/eda_e2e" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs eda-postgres-e2e
+          exit 1
+      - name: Run recorded OpenSTA and PostgreSQL E2E suite
+        run: PYTHONPATH=src uv run python -W error::ResourceWarning -m unittest discover -s tests -v
+      - name: Remove disposable PostgreSQL
+        if: always()
+        run: docker rm --force eda-postgres-e2e || true

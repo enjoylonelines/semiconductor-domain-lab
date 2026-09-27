@@ -1,7 +1,7 @@
 # Distributed execution ownership(분산 실행 소유권) Deep Dive 1 계획
 
 작성일: 2026-09-26
-상태: Phase B(단계 B) 완료; Phase C(단계 C) Human Decision Gate(사람 결정 관문) 대기
+상태: Phase C(단계 C) 측정 완료; Phase D(단계 D) trigger(조건) 미충족, Human Decision Gate(사람 결정 관문) 대기
 원본 기준: 이 프로젝트 repository(저장소). Career OS(커리어 운영체제)는 완료된 bounded cycle(제한된 사이클)의 링크·요약·revision(리비전)만 보관한다.
 
 ## 1. Problem framing(문제 정의)
@@ -156,7 +156,11 @@ Kafka challenger trigger(카프카 대안 조건)는 fixed workload(고정 작�
 
 절대 SLO(서비스 수준 목표)는 현재 `unrecorded`다. 관측된 비율·반복·환경 값을 evidence(근거)에 기록한 뒤 Human Decision Gate에서 해석한다.
 
-### Phase D — Kafka delivery challenger(카프카 전달 대안) — conditional(조건부)
+### Phase C outcome(단계 C 결과) — measured(측정 완료)
+
+1/2/4/8 worker process(작업자 프로세스)와 3 repeat(반복)의 coordination microbenchmark(조정 미세 측정) 및 actual OpenSTA workload(실제 OpenSTA 작업부하) 결과는 [Phase C evidence](../evidence/2026-09-26-postgres-coordination-limit.md)에 있다. 8-worker actual OpenSTA claim p95(권한 획득 상위 95%)는 8.254 ms, elapsed p95(경과 상위 95%)는 359.900 ms였고, claim path(권한 경로)는 약 2.3%였다. claim error(권한 획득 오류), connection pressure(연결 압박), duplicate execution(중복 실행), retained replay(보존 재생), independent multi-consumer(독립 다중 소비자), reprocessing(재처리), sustained backlog(지속 적체) requirement(요구)는 관측되지 않았다. 따라서 Phase D trigger(단계 D 조건)는 미충족이다. Kafka adoption(카프카 채택) 판단은 Human Decision Gate(사람 결정 관문)에서 보류한다.
+
+### Phase D — Kafka delivery challenger(카프카 전달 대안) — not triggered(조건 미충족)
 
 Phase C trigger가 Human Decision Gate에서 승인된 경우에만 구현한다. Kafka는 source of truth(원본 상태)가 아니다.
 
