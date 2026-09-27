@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import FIRST_COMPLETED, wait
+from threading import Event
 
 from .service import JobService
 
@@ -19,6 +20,10 @@ class PostgresWorker:
             raise ValueError("concurrency must be positive")
         completed: list[str] = []
         active = {}
+        # Recovery is part of the Worker responsibility for the bounded
+        # same-host profile. A database recovery claim serializes this against
+        # other Workers before any local process observation occurs.
+        self.service.recover_stale_runs(stale_after_seconds=self.service.lease_seconds)
         while max_jobs is None or len(completed) + len(active) < max_jobs:
             if len(active) >= concurrency:
                 done, _ = wait(active, return_when=FIRST_COMPLETED)
@@ -33,4 +38,17 @@ class PostgresWorker:
         for future, job_id in active.items():
             future.result()
             completed.append(job_id)
+        return completed
+
+    def serve(self, *, concurrency: int = 1, poll_seconds: float = 0.5, stop: Event | None = None) -> list[str]:
+        """Run bounded claim and recovery scans until a caller stops the Worker."""
+        if poll_seconds <= 0:
+            raise ValueError("poll_seconds must be positive")
+        stop = stop or Event()
+        completed: list[str] = []
+        while not stop.is_set():
+            before = len(completed)
+            completed.extend(self.drain(concurrency=concurrency))
+            if len(completed) == before:
+                stop.wait(poll_seconds)
         return completed

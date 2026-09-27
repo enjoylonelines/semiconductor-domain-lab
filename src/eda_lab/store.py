@@ -37,7 +37,8 @@ class Store:
           status TEXT NOT NULL, error_type TEXT, error TEXT, artifact_path TEXT,
           retry_class TEXT, started_at REAL NOT NULL DEFAULT 0, updated_at REAL NOT NULL DEFAULT 0,
           lease_owner TEXT, lease_token TEXT, lease_expires_at REAL, heartbeat_at REAL,
-          process_pid INTEGER, process_started_at REAL,
+          process_pid INTEGER, process_started_at REAL, process_identity TEXT, process_group_id INTEGER, orphan_deadline REAL,
+          recovery_owner TEXT, recovery_token TEXT, recovery_expires_at REAL,
           PRIMARY KEY(job_id, attempt_no)
         );
         CREATE TABLE IF NOT EXISTS metric_rows (
@@ -72,6 +73,12 @@ class Store:
         self._add_column_if_missing("attempts", "heartbeat_at", "REAL")
         self._add_column_if_missing("attempts", "process_pid", "INTEGER")
         self._add_column_if_missing("attempts", "process_started_at", "REAL")
+        self._add_column_if_missing("attempts", "process_identity", "TEXT")
+        self._add_column_if_missing("attempts", "process_group_id", "INTEGER")
+        self._add_column_if_missing("attempts", "orphan_deadline", "REAL")
+        self._add_column_if_missing("attempts", "recovery_owner", "TEXT")
+        self._add_column_if_missing("attempts", "recovery_token", "TEXT")
+        self._add_column_if_missing("attempts", "recovery_expires_at", "REAL")
         self.connection.commit()
 
     def close(self) -> None:
@@ -232,12 +239,14 @@ class Store:
             self.connection.commit()
             return cursor.rowcount == 1
 
-    def record_attempt_process(self, job_id: str, attempt_no: int, token: str, pid: int, started_at: float) -> bool:
+    def record_attempt_process(self, job_id: str, attempt_no: int, token: str, pid: int, started_at: float,
+                               *, process_identity: str | None = None, process_group_id: int | None = None,
+                               orphan_deadline: float | None = None) -> bool:
         with self._lock:
             cursor = self.connection.execute(
-                "UPDATE attempts SET process_pid = ?, process_started_at = ?, updated_at = ? "
+                "UPDATE attempts SET process_pid = ?, process_started_at = ?, process_identity = ?, process_group_id = ?, orphan_deadline = ?, updated_at = ? "
                 "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_token = ?",
-                (pid, started_at, self._now(), job_id, attempt_no, token),
+                (pid, started_at, process_identity, process_group_id, orphan_deadline, self._now(), job_id, attempt_no, token),
             )
             self.connection.commit()
             return cursor.rowcount == 1
@@ -248,8 +257,31 @@ class Store:
         with self._lock:
             cursor = self.connection.execute(
                 "UPDATE attempts SET status = ?, error_type = ?, error = ?, artifact_path = COALESCE(?, artifact_path), "
-                "retry_class = ?, updated_at = ? WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_token = ?",
-                (status, error_type, error, artifact_path, retry_class, self._now(), job_id, attempt_no, token),
+                "retry_class = ?, updated_at = ? WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_token = ? "
+                "AND lease_expires_at >= ? AND (recovery_token IS NULL OR recovery_expires_at < ?)",
+                (status, error_type, error, artifact_path, retry_class, self._now(), job_id, attempt_no, token, self._now(), self._now()),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def claim_recovery(self, job_id: str, attempt_no: int, owner: str, token: str, ttl_seconds: float) -> bool:
+        now = self._now()
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE attempts SET recovery_owner = ?, recovery_token = ?, recovery_expires_at = ?, updated_at = ? "
+                "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND lease_expires_at < ? "
+                "AND (recovery_token IS NULL OR recovery_expires_at < ?)",
+                (owner, token, now + ttl_seconds, now, job_id, attempt_no, now, now),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def release_recovery_claim(self, job_id: str, attempt_no: int, token: str) -> bool:
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE attempts SET recovery_owner = NULL, recovery_token = NULL, recovery_expires_at = NULL, updated_at = ? "
+                "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND recovery_token = ?",
+                (self._now(), job_id, attempt_no, token),
             )
             self.connection.commit()
             return cursor.rowcount == 1
@@ -274,6 +306,74 @@ class Store:
     def save_findings(self, revision_id: str, findings: list[tuple[str, str, str, str, str, str, float]]) -> None:
         with self._lock:
             try:
+    def finalize_recovery(self, job_id: str, attempt_no: int, token: str, *, error_type: str, error: str) -> bool:
+        now = self._now()
+        with self._lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                attempt = self.connection.execute(
+                    "UPDATE attempts SET status = 'ABANDONED', error_type = ?, error = ?, retry_class = 'recovery_required', updated_at = ? "
+                    "WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' AND recovery_token = ?",
+                    (error_type, error, now, job_id, attempt_no, token),
+                )
+                if attempt.rowcount != 1:
+                    self.connection.rollback()
+                    return False
+                run = self.connection.execute(
+                    "UPDATE runs SET status = 'FAILED', error = ?, updated_at = ? WHERE job_id = ? AND status = 'RUNNING'",
+                    (error, now, job_id),
+                )
+                if run.rowcount != 1:
+                    self.connection.rollback()
+                    return False
+                self.connection.commit()
+                return True
+            except Exception:
+                self.connection.rollback()
+                raise
+
+    def finalize_attempt_and_run(self, job_id: str, attempt_no: int, token: str, attempt_status: str, run_status: str,
+                                 *, error_type: str | None = None, error: str | None = None,
+                                 artifact_path: str | None = None, retry_class: str | None = None,
+                                 run_fields: dict[str, Any] | None = None) -> bool:
+        """Commit a lease-fenced Attempt terminal state and its Run together."""
+        now = self._now()
+        fields = {key: value for key, value in (run_fields or {}).items() if key in {
+            "parse_status", "check_status", "completeness", "semantic_status", "provenance_status",
+            "trust_status", "provenance", "artifact_path", "error",
+        }}
+        fields.update({"status": run_status, "updated_at": now})
+        if "error" not in fields:
+            fields["error"] = error
+        if artifact_path is not None and "artifact_path" not in fields:
+            fields["artifact_path"] = artifact_path
+        if "provenance" in fields:
+            fields["provenance"] = json.dumps(fields["provenance"] or {}, sort_keys=True)
+        assignments = ", ".join(f"{key} = ?" for key in fields)
+        with self._lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                attempt = self.connection.execute(
+                    "UPDATE attempts SET status = ?, error_type = ?, error = ?, artifact_path = COALESCE(?, artifact_path), "
+                    "retry_class = ?, updated_at = ? WHERE job_id = ? AND attempt_no = ? AND status = 'RUNNING' "
+                    "AND lease_token = ? AND lease_expires_at >= ? AND (recovery_token IS NULL OR recovery_expires_at < ?)",
+                    (attempt_status, error_type, error, artifact_path, retry_class, now, job_id, attempt_no, token, now, now),
+                )
+                if attempt.rowcount != 1:
+                    self.connection.rollback()
+                    return False
+                run = self.connection.execute(
+                    f"UPDATE runs SET {assignments} WHERE job_id = ? AND status = 'RUNNING'", (*fields.values(), job_id)
+                )
+                if run.rowcount != 1:
+                    self.connection.rollback()
+                    return False
+                self.connection.commit()
+                return True
+            except Exception:
+                self.connection.rollback()
+                raise
+
                 self.connection.executemany(
                     "INSERT INTO findings(revision_id, run_id, startpoint, endpoint, path_group, analysis_type, corner, slack_ns) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

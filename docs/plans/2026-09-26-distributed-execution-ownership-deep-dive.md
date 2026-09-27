@@ -1,7 +1,7 @@
 # Distributed execution ownership(분산 실행 소유권) Deep Dive 1 계획
 
 작성일: 2026-09-26
-상태: Phase C(단계 C) 측정 완료; Phase D(단계 D) trigger(조건) 미충족, Human Decision Gate(사람 결정 관문) 대기
+상태: Phase C(단계 C) 측정 완료; Phase D(단계 D) trigger(조건) 미충족. 2026-09-27 same-host recovery closure(동일 호스트 복구 보정)로 orphan completion(고아 완료) 경계를 보완했으며, multi-host(다중 호스트)는 별도 Human Decision Gate(사람 결정 관문) 대기
 원본 기준: 이 프로젝트 repository(저장소). Career OS(커리어 운영체제)는 완료된 bounded cycle(제한된 사이클)의 링크·요약·revision(리비전)만 보관한다.
 
 ## 1. Problem framing(문제 정의)

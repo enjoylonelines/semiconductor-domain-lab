@@ -2,6 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
+import signal
+import subprocess
 from threading import BoundedSemaphore, Event, Lock, Thread, local
 import time
 from uuid import uuid4
@@ -25,7 +27,7 @@ class IdempotencyConflict(RuntimeError):
 
 
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False, backpressure_retry_after_seconds: float = 1.0, execution_mode: str = "local"):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False, backpressure_retry_after_seconds: float = 1.0, execution_mode: str = "local", recovery_lease_seconds: float = 30, orphan_grace_seconds: float = 60):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
@@ -33,6 +35,10 @@ class JobService:
         self.resource_slots = BoundedSemaphore(resource_slots) if resource_slots else None
         self.worker_id = worker_id
         self.lease_seconds = lease_seconds
+        if recovery_lease_seconds <= 0 or orphan_grace_seconds <= 0:
+            raise ValueError("recovery and orphan durations must be positive")
+        self.recovery_lease_seconds = recovery_lease_seconds
+        self.orphan_grace_seconds = orphan_grace_seconds
         self.max_in_flight = max_in_flight
         if execution_mode not in {"local", "external"}:
             raise ValueError("execution_mode must be local or external")
@@ -65,7 +71,26 @@ class JobService:
         if context is None:
             return
         job_id, attempt_no, lease_token = context
-        self.store.record_attempt_process(job_id, attempt_no, lease_token, pid, started_at)
+        try:
+            process_group_id = os.getpgid(pid)
+        except (AttributeError, ProcessLookupError):
+            process_group_id = None
+        self.store.record_attempt_process(
+            job_id, attempt_no, lease_token, pid, self.store.now(),
+            process_identity=self._process_identity(pid), process_group_id=process_group_id,
+            orphan_deadline=self.store.now() + self.orphan_grace_seconds,
+        )
+
+    @staticmethod
+    def _process_identity(pid: int) -> str | None:
+        """Return a local observation that distinguishes a reused PID when available."""
+        try:
+            observed = subprocess.check_output(
+                ["ps", "-o", "lstart=", "-o", "command=", "-p", str(pid)], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            return None
+        return observed or None
 
     @staticmethod
     def _spec_hash(spec: JobSpec) -> str:
@@ -177,6 +202,14 @@ class JobService:
         if not self.store.transition_attempt(job_id, attempt_no, lease_token, status, **fields):
             raise RuntimeError("attempt terminal write lost its lease fence")
 
+    def _finalize_attempt_and_run(self, job_id: str, attempt_no: int, lease_token: str, attempt_status: str,
+                                  run_status: str, **fields) -> None:
+        run_fields = fields.pop("run_fields", {})
+        if not self.store.finalize_attempt_and_run(
+            job_id, attempt_no, lease_token, attempt_status, run_status, run_fields=run_fields, **fields
+        ):
+            raise RuntimeError("attempt and run terminal write lost its lease fence")
+
     def _execute(self, spec: JobSpec) -> None:
         self.store.update_run(spec.job_id, status="RUNNING")
         for attempt_no in range(1, self.max_attempts + 1):
@@ -218,56 +251,48 @@ class JobService:
                 result = parse_report(artifact)
                 validation_fields = self._validation_fields(result, process_exit_code, execution_provenance)
                 if result.parse_status == "INVALID":
-                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact), retry_class="non_retryable")
-                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error="; ".join(result.errors))
+                    self._finalize_attempt_and_run(spec.job_id, attempt_no, lease_token, "FAILED", "FAILED", error_type="parse_invalid", error="; ".join(result.errors), artifact_path=str(artifact), retry_class="non_retryable", run_fields=validation_fields)
                     return
                 if result.semantic_status == "INVALID":
                     error = "; ".join(result.errors)
-                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="semantic_invalid", error=error, artifact_path=str(artifact), retry_class="non_retryable")
-                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
+                    self._finalize_attempt_and_run(spec.job_id, attempt_no, lease_token, "FAILED", "FAILED", error_type="semantic_invalid", error=error, artifact_path=str(artifact), retry_class="non_retryable", run_fields=validation_fields)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 if process_exit_code is None:
                     error = "execution_outcome_unknown: adapter returned artifact without process exit code"
-                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="execution_outcome_unknown", error=error, artifact_path=str(artifact), retry_class="non_retryable")
-                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
+                    self._finalize_attempt_and_run(spec.job_id, attempt_no, lease_token, "FAILED", "FAILED", error_type="execution_outcome_unknown", error=error, artifact_path=str(artifact), retry_class="non_retryable", run_fields=validation_fields)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
                 if process_exit_code != 0:
                     error = f"tool_exit: exit code {process_exit_code}"
-                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="tool_exit", error=error, artifact_path=str(artifact), retry_class="non_retryable")
-                    self.store.update_run(spec.job_id, status="FAILED", **validation_fields, artifact_path=str(artifact), error=error)
+                    self._finalize_attempt_and_run(spec.job_id, attempt_no, lease_token, "FAILED", "FAILED", error_type="tool_exit", error=error, artifact_path=str(artifact), retry_class="non_retryable", run_fields=validation_fields)
                     if result.metrics:
                         self.store.save_metrics(spec.job_id, result.metrics)
                     return
-                self._transition_attempt(spec.job_id, attempt_no, lease_token, "SUCCEEDED", artifact_path=str(artifact), retry_class="not_applicable")
-                self.store.update_run(spec.job_id, status="SUCCEEDED", **validation_fields, artifact_path=str(artifact), error=None)
+                self._finalize_attempt_and_run(spec.job_id, attempt_no, lease_token, "SUCCEEDED", "SUCCEEDED", artifact_path=str(artifact), retry_class="not_applicable", run_fields=validation_fields)
                 if result.metrics:
                     self.store.save_metrics(spec.job_id, result.metrics)
                 return
             except AdapterCancelledError as exc:
-                self._transition_attempt(spec.job_id, attempt_no, lease_token, "CANCELLED", error_type="cancelled", error=str(exc), retry_class="non_retryable")
-                self.store.update_run(spec.job_id, status="CANCELLED", trust_status="INVALID", error=str(exc))
+                self._finalize_attempt_and_run(spec.job_id, attempt_no, lease_token, "CANCELLED", "CANCELLED", error_type="cancelled", error=str(exc), retry_class="non_retryable", run_fields={"trust_status": "INVALID"})
                 return
             except (TimeoutError, ConnectionError) as exc:
                 error_type = "timeout" if isinstance(exc, TimeoutError) else "transport_error"
-                self._transition_attempt(spec.job_id, attempt_no, lease_token, "RETRYABLE_FAILURE", error_type=error_type, error=str(exc), retry_class="retryable")
                 if attempt_no < self.max_attempts:
+                    self._transition_attempt(spec.job_id, attempt_no, lease_token, "RETRYABLE_FAILURE", error_type=error_type, error=str(exc), retry_class="retryable")
                     time.sleep(self.retry_delay_seconds * attempt_no)
                     continue
                 terminal_status = "TIMED_OUT" if isinstance(exc, TimeoutError) else "FAILED"
-                self.store.update_run(
-                    spec.job_id,
-                    status=terminal_status,
-                    trust_status="INVALID",
-                    error=f"{error_type}: exhausted after {attempt_no} attempts",
+                self._finalize_attempt_and_run(
+                    spec.job_id, attempt_no, lease_token, "RETRYABLE_FAILURE", terminal_status,
+                    error_type=error_type, error=f"{error_type}: exhausted after {attempt_no} attempts",
+                    retry_class="retryable", run_fields={"trust_status": "INVALID"},
                 )
                 return
             except Exception as exc:
-                self._transition_attempt(spec.job_id, attempt_no, lease_token, "FAILED", error_type="execution_error", error=str(exc), retry_class="non_retryable")
-                self.store.update_run(spec.job_id, status="FAILED", error=str(exc))
+                self._finalize_attempt_and_run(spec.job_id, attempt_no, lease_token, "FAILED", "FAILED", error_type="execution_error", error=str(exc), retry_class="non_retryable")
                 return
             finally:
                 if heartbeat_stop is not None:
@@ -287,6 +312,8 @@ class JobService:
         skipped_live: list[str] = []
         skipped_live_child: list[str] = []
         skipped_active_lease: list[str] = []
+        skipped_recovery_claim: list[str] = []
+        orphan_termination_requested: list[str] = []
         expired_leases = set(self.store.list_expired_leased_attempts())
         for run in self.store.list_stale_running(cutoff):
             future = self.futures.get(run["job_id"])
@@ -295,28 +322,64 @@ class JobService:
                 skipped_live.append(run["job_id"])
                 continue
             attempts = run["attempts"]
-            if attempts and attempts[-1]["process_pid"] is not None:
+            if not attempts:
+                self.store.update_run(run["job_id"], status="FAILED", error="recovery: stale RUNNING record without an Attempt")
+                recovered.append(run["job_id"])
+                continue
+            attempt = attempts[-1]
+            if attempt["lease_token"] and (run["job_id"], attempt["attempt_no"]) not in expired_leases:
+                skipped_active_lease.append(run["job_id"])
+                continue
+            recovery_token = uuid4().hex
+            if not self.store.claim_recovery(
+                run["job_id"], attempt["attempt_no"], self.worker_id, recovery_token, self.recovery_lease_seconds
+            ):
+                skipped_recovery_claim.append(run["job_id"])
+                continue
+            if attempt["process_pid"] is not None:
                 try:
-                    os.kill(attempts[-1]["process_pid"], 0)
+                    os.kill(attempt["process_pid"], 0)
                 except ProcessLookupError:
                     pass
                 else:
-                    skipped_live_child.append(run["job_id"])
+                    identity_matches = attempt.get("process_identity") in {None, self._process_identity(attempt["process_pid"])}
+                    deadline_expired = attempt.get("orphan_deadline") is not None and self.store.now() >= attempt["orphan_deadline"]
+                    if not deadline_expired:
+                        self.store.release_recovery_claim(run["job_id"], attempt["attempt_no"], recovery_token)
+                        skipped_live_child.append(run["job_id"])
+                        continue
+                    if identity_matches and attempt.get("process_group_id") == attempt["process_pid"]:
+                        try:
+                            os.killpg(attempt["process_group_id"], signal.SIGTERM)
+                        except (AttributeError, ProcessLookupError, PermissionError):
+                            pass
+                        else:
+                            self.store.release_recovery_claim(run["job_id"], attempt["attempt_no"], recovery_token)
+                            orphan_termination_requested.append(run["job_id"])
+                            continue
+                    if not self.store.finalize_recovery(
+                        run["job_id"], attempt["attempt_no"], recovery_token,
+                        error_type="orphan_deadline_identity_unknown",
+                        error="recovery: orphan deadline expired without a safely terminable child identity",
+                    ):
+                        skipped_recovery_claim.append(run["job_id"])
+                    else:
+                        recovered.append(run["job_id"])
                     continue
-            if attempts and attempts[-1]["lease_token"] and (run["job_id"], attempts[-1]["attempt_no"]) not in expired_leases:
-                skipped_active_lease.append(run["job_id"])
-                continue
-            if attempts and attempts[-1]["status"] == "RUNNING":
-                self.store.record_attempt(
-                    run["job_id"], attempts[-1]["attempt_no"], "ABANDONED",
-                    error_type="worker_unavailable", error="stale running attempt recovered after worker ended",
-                    retry_class="recovery_required",
-                )
-            self.store.update_run(run["job_id"], status="FAILED", error="recovery: stale RUNNING record without live worker")
-            recovered.append(run["job_id"])
+            if self.store.finalize_recovery(
+                run["job_id"], attempt["attempt_no"], recovery_token,
+                error_type="worker_unavailable", error="recovery: stale RUNNING record without live worker",
+            ):
+                recovered.append(run["job_id"])
+            else:
+                skipped_recovery_claim.append(run["job_id"])
         result = {"recovered": recovered, "skipped_live": skipped_live}
         if skipped_active_lease:
             result["skipped_active_lease"] = skipped_active_lease
         if skipped_live_child:
             result["skipped_live_child"] = skipped_live_child
+        if skipped_recovery_claim:
+            result["skipped_recovery_claim"] = skipped_recovery_claim
+        if orphan_termination_requested:
+            result["orphan_termination_requested"] = orphan_termination_requested
         return result

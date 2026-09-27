@@ -134,3 +134,78 @@ class PostgresOperationalPathTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(DSN, "set EDA_POSTGRES_TEST_DSN for a dedicated disposable PostgreSQL database")
+class PostgresRecoveryFenceTests(unittest.TestCase):
+    def setUp(self):
+        self.clock = [100.0]
+        self.prefix = uuid4().hex
+        self.stores = []
+
+    def tearDown(self):
+        for store in self.stores:
+            store.close()
+
+    def store(self):
+        store = PostgresStore(DSN, now=lambda: self.clock[0])
+        self.stores.append(store)
+        return store
+
+    def create_expired_attempt(self, store):
+        job_id = f"{self.prefix}-stale"
+        store.create_run(job_id, "d", "ip", "timing")
+        store.update_run(job_id, status="RUNNING")
+        store.record_attempt(job_id, 1, "RUNNING", retry_class="not_classified")
+        self.assertTrue(store.acquire_attempt_lease(job_id, 1, "owner", "owner-token", 1))
+        self.clock[0] = 102.0
+        return job_id
+
+    def test_only_one_recovery_claim_can_fence_an_expired_attempt(self):
+        first, second = self.store(), self.store()
+        job_id = self.create_expired_attempt(first)
+
+        self.assertTrue(first.claim_recovery(job_id, 1, "reconciler-a", "recovery-a", 10))
+        self.assertFalse(second.claim_recovery(job_id, 1, "reconciler-b", "recovery-b", 10))
+        self.assertFalse(second.transition_attempt(job_id, 1, "owner-token", "SUCCEEDED"))
+
+    def test_recovery_finalization_updates_attempt_and_run_together(self):
+        store = self.store()
+        job_id = self.create_expired_attempt(store)
+        self.assertTrue(store.claim_recovery(job_id, 1, "reconciler", "recovery-token", 10))
+        self.assertTrue(store.finalize_recovery(
+            job_id, 1, "recovery-token", error_type="worker_unavailable", error="test recovery",
+        ))
+        result = store.get_run(job_id)
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["attempts"][-1]["status"], "ABANDONED")
+        self.assertFalse(store.transition_attempt(job_id, 1, "owner-token", "SUCCEEDED"))
+
+    def test_worker_startup_scan_recovers_an_expired_attempt_without_a_queued_run(self):
+        store = self.store()
+        job_id = self.create_expired_attempt(store)
+        service = JobService(
+            store, max_workers=1, max_attempts=1, worker_id="recovery-worker",
+            execution_mode="external", lease_seconds=1,
+        )
+        self.addCleanup(service.close)
+        self.assertEqual(PostgresWorker(store, service).drain(), [])
+        result = store.get_run(job_id)
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["attempts"][-1]["status"], "ABANDONED")
+
+    def test_terminal_completion_fences_attempt_and_run_in_one_transaction(self):
+        store = self.store()
+        job_id = f"{self.prefix}-completion"
+        store.create_run(job_id, "d", "ip", "timing")
+        store.update_run(job_id, status="RUNNING")
+        store.record_attempt(job_id, 1, "RUNNING", retry_class="not_classified")
+        self.assertTrue(store.acquire_attempt_lease(job_id, 1, "worker", "token", 10))
+
+        self.assertTrue(store.finalize_attempt_and_run(
+            job_id, 1, "token", "SUCCEEDED", "SUCCEEDED", retry_class="not_applicable",
+        ))
+        result = store.get_run(job_id)
+        self.assertEqual(result["status"], "SUCCEEDED")
+        self.assertEqual(result["attempts"][-1]["status"], "SUCCEEDED")
+        self.assertFalse(store.transition_attempt(job_id, 1, "token", "FAILED"))

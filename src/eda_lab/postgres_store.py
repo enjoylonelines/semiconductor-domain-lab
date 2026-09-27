@@ -41,12 +41,23 @@ class PostgresStore:
               error_type text, error text, artifact_path text, retry_class text, started_at double precision NOT NULL DEFAULT 0,
               updated_at double precision NOT NULL DEFAULT 0, lease_owner text, lease_token text,
               lease_expires_at double precision, heartbeat_at double precision, process_pid integer, process_started_at double precision,
+              process_identity text, process_group_id integer, orphan_deadline double precision,
+              recovery_owner text, recovery_token text, recovery_expires_at double precision,
               PRIMARY KEY(job_id, attempt_no));
             CREATE TABLE IF NOT EXISTS eda_metric_rows (id bigserial PRIMARY KEY, job_id text NOT NULL REFERENCES eda_runs(job_id), metric_name text NOT NULL, stage text NOT NULL, corner text NOT NULL, value double precision NOT NULL, unit text NOT NULL);
             CREATE INDEX IF NOT EXISTS idx_eda_metric_rows_stage_corner ON eda_metric_rows(stage, corner, metric_name);
             CREATE TABLE IF NOT EXISTS eda_revisions (revision_id text PRIMARY KEY, design_id text NOT NULL, source_revision text NOT NULL, liberty_hash text NOT NULL, sdc_hash text NOT NULL, tool_version text NOT NULL, parser_version text NOT NULL);
             CREATE TABLE IF NOT EXISTS eda_findings (id bigserial PRIMARY KEY, revision_id text NOT NULL REFERENCES eda_revisions(revision_id), run_id text NOT NULL, startpoint text NOT NULL, endpoint text NOT NULL, path_group text NOT NULL, analysis_type text NOT NULL, corner text NOT NULL, slack_ns double precision NOT NULL);
             """)
+            for column, definition in (
+                ("recovery_owner", "text"),
+                ("recovery_token", "text"),
+                ("recovery_expires_at", "double precision"),
+                ("process_identity", "text"),
+                ("process_group_id", "integer"),
+                ("orphan_deadline", "double precision"),
+            ):
+                c.execute(f"ALTER TABLE eda_attempts ADD COLUMN IF NOT EXISTS {column} {definition}")
 
     def close(self) -> None:
         with self._lock:
@@ -110,13 +121,54 @@ class PostgresStore:
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
             c.execute("UPDATE eda_attempts SET heartbeat_at=%s,lease_expires_at=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s AND lease_expires_at >= %s", (now,now+ttl_seconds,now,job_id,attempt_no,token,now)); return c.rowcount==1
 
-    def record_attempt_process(self, job_id, attempt_no, token, pid, started_at):
+    def record_attempt_process(self, job_id, attempt_no, token, pid, started_at, *, process_identity=None, process_group_id=None, orphan_deadline=None):
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
-            c.execute("UPDATE eda_attempts SET process_pid=%s,process_started_at=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s", (pid,started_at,self.now(),job_id,attempt_no,token)); return c.rowcount==1
+            c.execute("UPDATE eda_attempts SET process_pid=%s,process_started_at=%s,process_identity=%s,process_group_id=%s,orphan_deadline=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s", (pid,started_at,process_identity,process_group_id,orphan_deadline,self.now(),job_id,attempt_no,token)); return c.rowcount==1
 
     def transition_attempt(self, job_id, attempt_no, token, status, *, error_type=None, error=None, artifact_path=None, retry_class=None):
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
-            c.execute("UPDATE eda_attempts SET status=%s,error_type=%s,error=%s,artifact_path=COALESCE(%s,artifact_path),retry_class=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s", (status,error_type,error,artifact_path,retry_class,self.now(),job_id,attempt_no,token)); return c.rowcount==1
+            now = self.now()
+            c.execute("UPDATE eda_attempts SET status=%s,error_type=%s,error=%s,artifact_path=COALESCE(%s,artifact_path),retry_class=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s AND lease_expires_at >= %s AND (recovery_token IS NULL OR recovery_expires_at < %s)", (status,error_type,error,artifact_path,retry_class,now,job_id,attempt_no,token,now,now)); return c.rowcount==1
+
+    def claim_recovery(self, job_id, attempt_no, owner, token, ttl_seconds):
+        """Fence one reconciler before it observes an expired Attempt's child."""
+        now = self.now()
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_attempts SET recovery_owner=%s,recovery_token=%s,recovery_expires_at=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_expires_at < %s AND (recovery_token IS NULL OR recovery_expires_at < %s)", (owner,token,now+ttl_seconds,now,job_id,attempt_no,now,now))
+            return c.rowcount == 1
+
+    def release_recovery_claim(self, job_id, attempt_no, token):
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_attempts SET recovery_owner=NULL,recovery_token=NULL,recovery_expires_at=NULL,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND recovery_token=%s", (self.now(),job_id,attempt_no,token))
+            return c.rowcount == 1
+
+    def finalize_recovery(self, job_id, attempt_no, token, *, error_type, error):
+        """Atomically abandon one recovery-claimed Attempt and fail its Run."""
+        now = self.now()
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_attempts SET status='ABANDONED',error_type=%s,error=%s,retry_class='recovery_required',updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND recovery_token=%s", (error_type,error,now,job_id,attempt_no,token))
+            if c.rowcount != 1:
+                return False
+            c.execute("UPDATE eda_runs SET status='FAILED',error=%s,updated_at=%s WHERE job_id=%s AND status='RUNNING'", (error,now,job_id))
+            return c.rowcount == 1
+
+    def finalize_attempt_and_run(self, job_id, attempt_no, token, attempt_status, run_status, *, error_type=None,
+                                 error=None, artifact_path=None, retry_class=None, run_fields=None):
+        allowed = {"parse_status","check_status","completeness","semantic_status","provenance_status","trust_status","provenance","artifact_path","error"}
+        fields = {k: v for k, v in (run_fields or {}).items() if k in allowed}
+        now = self.now()
+        fields.update({"status": run_status, "updated_at": now})
+        fields.setdefault("error", error)
+        if artifact_path is not None:
+            fields.setdefault("artifact_path", artifact_path)
+        values = [json.dumps(v) if k == "provenance" else v for k, v in fields.items()]
+        assignments = ", ".join(f"{k} = %s" + ("::jsonb" if k == "provenance" else "") for k in fields)
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_attempts SET status=%s,error_type=%s,error=%s,artifact_path=COALESCE(%s,artifact_path),retry_class=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s AND lease_expires_at >= %s AND (recovery_token IS NULL OR recovery_expires_at < %s)", (attempt_status,error_type,error,artifact_path,retry_class,now,job_id,attempt_no,token,now,now))
+            if c.rowcount != 1:
+                return False
+            c.execute(f"UPDATE eda_runs SET {assignments} WHERE job_id=%s AND status='RUNNING'", (*values,job_id))
+            return c.rowcount == 1
 
     def list_expired_leased_attempts(self, now=None):
         with self._lock, self.connection.cursor() as c:

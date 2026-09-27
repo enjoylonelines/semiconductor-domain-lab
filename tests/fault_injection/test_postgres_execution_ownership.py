@@ -94,7 +94,8 @@ class PostgresExecutionOwnershipFaultTests(unittest.TestCase):
         self.addCleanup(service.close)
         self.assertEqual(service.submit(spec)["status"], "QUEUED")
 
-    def worker_process(self, fixture_dir: Path, *, kill_at_completion: bool = False) -> subprocess.Popen:
+    def worker_process(self, fixture_dir: Path, *, kill_at_completion: bool = False,
+                       orphan_grace_seconds: float = 60) -> subprocess.Popen:
         adapter_definition = "" if not kill_at_completion else '''class KillAtCompletionAdapter(OpenStaSubprocessAdapter):
     def run(self, spec):
         result = super().run(spec)
@@ -110,7 +111,7 @@ from eda_lab.worker import PostgresWorker
 {adapter_definition}
 store = PostgresStore(os.environ["EDA_POSTGRES_TEST_DSN"])
 adapter = {"KillAtCompletionAdapter" if kill_at_completion else "OpenStaSubprocessAdapter"}(sta_path=Path({str(STA_PATH)!r}), liberty_path=Path({str(LIBERTY_PATH)!r}), fixture_dir=Path({str(fixture_dir)!r}), script_name="delayed.tcl", timeout_seconds=5)
-service = JobService(store, max_workers=1, max_attempts=1, adapter=adapter, worker_id="fault-worker", lease_seconds=0.10, max_in_flight=8, execution_mode="external")
+service = JobService(store, max_workers=1, max_attempts=1, adapter=adapter, worker_id="fault-worker", lease_seconds=0.10, max_in_flight=8, execution_mode="external", orphan_grace_seconds={orphan_grace_seconds!r})
 try:
     PostgresWorker(store, service).drain()
 finally:
@@ -176,6 +177,26 @@ finally:
         self.assertNotEqual(recovered["status"], "SUCCEEDED")
         self.assertEqual([(a["attempt_no"], a["status"]) for a in recovered["attempts"]], [(1, "ABANDONED")])
         self.assertIsNone(recovered["metrics"])
+
+    def test_orphan_deadline_terminates_a_verified_live_child_then_fails_closed(self):
+        spec = self.spec("orphan-deadline")
+        self.submit(spec)
+        worker = self.worker_process(self.delayed_fixture(delay_ms=3000), orphan_grace_seconds=0.05)
+        attempt = wait_until(lambda: self._latest_attempt_with_pid(spec.job_id), message="worker did not record child identity")
+        child_pid = attempt["process_pid"]
+        os.kill(worker.pid, signal.SIGKILL)
+        self.assertEqual(worker.wait(timeout=2), -signal.SIGKILL)
+        wait_until(lambda: self.expired(spec.job_id), message="worker lease did not expire")
+        wait_until(lambda: time.time() >= attempt["orphan_deadline"], message="orphan deadline did not pass")
+
+        requested = self.reconcile()
+        self.assertEqual(requested["orphan_termination_requested"], [spec.job_id])
+        wait_until(lambda: not self._pid_exists(child_pid), message="recovery did not terminate the orphan child")
+        recovered = self.reconcile()
+        result = self.store.get_run(spec.job_id)
+        self.assertEqual(recovered["recovered"], [spec.job_id])
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual([(a["attempt_no"], a["status"]) for a in result["attempts"]], [(1, "ABANDONED")])
 
     @staticmethod
     def _pid_exists(pid: int) -> bool:

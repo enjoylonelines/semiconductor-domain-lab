@@ -23,7 +23,12 @@ def run_worker() -> None:
         adapter=OpenStaSubprocessAdapter(sta_path=sta_path, liberty_path=liberty_path, fixture_dir=fixture_dir),
     )
     try:
-        PostgresWorker(store, service).drain(concurrency=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")))
+        worker = PostgresWorker(store, service)
+        concurrency = int(os.environ.get("EDA_WORKER_CONCURRENCY", "4"))
+        if os.environ.get("EDA_WORKER_ONCE") == "1":
+            worker.drain(concurrency=concurrency)
+        else:
+            worker.serve(concurrency=concurrency, poll_seconds=float(os.environ.get("EDA_WORKER_POLL_SECONDS", "0.5")))
     finally:
         service.close()
 
