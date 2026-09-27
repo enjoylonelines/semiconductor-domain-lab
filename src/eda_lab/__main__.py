@@ -15,6 +15,7 @@ def run_worker() -> None:
     from .runner import OpenStaSubprocessAdapter
     from .service import JobService
     from .worker import PostgresWorker
+    from .host_agent import HostAgent
     store = PostgresStore(dsn)
     service = JobService(
         store, max_workers=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")),
@@ -23,8 +24,15 @@ def run_worker() -> None:
         adapter=OpenStaSubprocessAdapter(sta_path=sta_path, liberty_path=liberty_path, fixture_dir=fixture_dir),
     )
     try:
-        worker = PostgresWorker(store, service)
         concurrency = int(os.environ.get("EDA_WORKER_CONCURRENCY", "4"))
+        host_id = os.environ.get("EDA_HOST_ID")
+        host_epoch = os.environ.get("EDA_HOST_EPOCH")
+        if bool(host_id) != bool(host_epoch):
+            raise SystemExit("EDA_HOST_ID and EDA_HOST_EPOCH must be set together")
+        worker = (
+            HostAgent(store, service, host_id=host_id, host_epoch=host_epoch)
+            if host_id else PostgresWorker(store, service)
+        )
         if os.environ.get("EDA_WORKER_ONCE") == "1":
             worker.drain(concurrency=concurrency)
         else:

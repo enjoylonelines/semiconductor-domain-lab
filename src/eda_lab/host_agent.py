@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Event
+import time
 from uuid import uuid4
 
 from .worker import PostgresWorker
@@ -51,3 +53,13 @@ class HostAgent:
         if not self.heartbeat():
             raise RuntimeError("host agent session was superseded")
         return self.worker.drain(**kwargs)
+
+    def serve(self, *, concurrency: int = 1, poll_seconds: float = 0.5, stop: Event | None = None) -> list[str]:
+        if poll_seconds <= 0:
+            raise ValueError("poll_seconds must be positive")
+        stop = stop or Event()
+        completed: list[str] = []
+        while not stop.is_set():
+            completed.extend(self.drain(concurrency=concurrency))
+            stop.wait(poll_seconds)
+        return completed

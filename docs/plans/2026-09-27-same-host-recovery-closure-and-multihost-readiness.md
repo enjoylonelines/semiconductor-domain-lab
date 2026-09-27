@@ -1,7 +1,7 @@
 # Same-host recovery closure(동일 호스트 복구 보정)와 multi-host readiness(다중 호스트 준비) 계획
 
 작성일: 2026-09-27
-상태: same-host correction(동일 호스트 보정) 구현·검증 완료; multi-host M0(다중 호스트 M0) logical-agent contract(논리 에이전트 계약) 구현·검증 완료; physical-host M1(물리 호스트 M1) 환경 대기
+상태: same-host correction(동일 호스트 보정) 구현·검증 완료; multi-host M0(다중 호스트 M0) logical-agent contract(논리 에이전트 계약) 구현·검증 완료; M1 single-machine multi-node environment probe(단일 머신 다중 노드 환경 탐침) 완료; actual OpenSTA M1-E2E(실제 OpenSTA M1 종단 간 검증) 대기
 
 원본 기준(source of truth, 원본 기준)은 이 repository(저장소)다. Career OS(커리어 운영체제)에는 commit(커밋), evidence(근거), decision(결정)의 링크와 제한 요약만 적재한다.
 

@@ -1,0 +1,68 @@
+name: eda-multihost-m1
+
+services:
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_DB: eda_m1
+      POSTGRES_USER: eda
+      POSTGRES_PASSWORD: eda
+    networks: [eda_internal]
+    cpus: "0.50"
+    mem_limit: 384m
+    pids_limit: 128
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eda -d eda_m1"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  host-agent-a:
+    build:
+      context: .
+      dockerfile: Dockerfile.host-agent
+    environment:
+      EDA_POSTGRES_DSN: postgresql://eda:eda@postgres:5432/eda_m1
+      EDA_HOST_ID: m1-agent-a
+      EDA_HOST_EPOCH: boot-a
+      EDA_AGENT_LEASE_SECONDS: "3"
+    networks: [eda_internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    cpus: "0.60"
+    mem_limit: 512m
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp]
+    volumes: [agent_a_artifacts:/artifacts]
+
+  host-agent-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.host-agent
+    environment:
+      EDA_POSTGRES_DSN: postgresql://eda:eda@postgres:5432/eda_m1
+      EDA_HOST_ID: m1-agent-b
+      EDA_HOST_EPOCH: boot-b
+      EDA_AGENT_LEASE_SECONDS: "3"
+    networks: [eda_internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    cpus: "0.60"
+    mem_limit: 512m
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp]
+    volumes: [agent_b_artifacts:/artifacts]
+
+networks:
+  eda_internal:
+    internal: true
+
+volumes:
+  postgres_data:
+  agent_a_artifacts:
+  agent_b_artifacts:
