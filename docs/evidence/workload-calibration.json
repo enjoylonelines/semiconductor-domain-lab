@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "status": "calibration-only; no Cycle 1 fault injection or worker scaling executed",
+  "base_head": "a078819e0c9d91276f43b21f86a617f02c980261",
+  "opensta": {
+    "version": "3.1.0",
+    "revision": "396536743ff33852cd8af176988f077219bc8b8d",
+    "liberty_sha256": "70a45bf9b5ea8f6a701dc34744b5c767b38e1af31b1d1f97309a97ec64603ecf"
+  },
+  "workloads": {
+    "small": {
+      "source": "repo tiny fixture",
+      "mapped_cell_instances": 3,
+      "runs_real_s": [
+        0.24,
+        0.21,
+        0.21,
+        0.23,
+        0.2,
+        0.21
+      ],
+      "median_real_s": 0.21,
+      "p95_real_s": 0.2375,
+      "peak_rss_bytes_max": 53166080,
+      "report_bytes": 12211
+    },
+    "medium": {
+      "source": "YosysHQ/picorv32@ef203c2b0a3fb793280f5114941416c425c5b461, ISC",
+      "rtl_sha256": "0836050971b3c6cdd28ac3b1e5719a67fb645161912bef1e472e63995ceb0622",
+      "mapped_cell_instances": 6404,
+      "runs_real_s": [
+        0.36,
+        0.33,
+        0.34,
+        0.33,
+        0.32,
+        0.33
+      ],
+      "median_real_s": 0.33,
+      "p95_real_s": 0.355,
+      "peak_rss_bytes_max": 76414976,
+      "report_bytes": 29468
+    },
+    "heavy": {
+      "source": "calibration-only 16-instance wrapper around same PicoRV32 mapped module",
+      "effective_mapped_cell_instances": 102464,
+      "runs_real_s": [
+        1.94,
+        1.92,
+        1.91,
+        1.9,
+        1.91
+      ],
+      "median_real_s": 1.91,
+      "p95_real_s": 1.936,
+      "peak_rss_bytes_max": 366362624,
+      "report_bytes": 19030
+    }
+  },
+  "rejected_candidate": {
+    "name": "OpenSTA upstream gcd_sky130hd",
+    "reason": "cell count increased but same timing-report wall clock did not separate clearly from Small",
+    "mapped_cell_references": 1292,
+    "runs_real_s": [
+      0.22,
+      0.22,
+      0.21,
+      0.21,
+      0.22,
+      0.21
+    ]
+  },
+  "not_measured": [
+    "net count (no stable cross-fixture counting method registered yet)",
+    "timing endpoint/path population count",
+    "worker 1/2/4/8 scaling",
+    "throughput/latency under concurrent jobs",
+    "fault injection/recovery overhead"
+  ]
+}
