@@ -164,6 +164,12 @@ class PostgresStore:
             c.execute("UPDATE eda_execution_requests SET status='CLAIMED',supervisor_id=%s,claimed_at=%s WHERE execution_id=%s AND status='QUEUED'", (supervisor_id,self.now(),row['execution_id']))
             return row if c.rowcount == 1 else None
 
+    def count_active_execution_requests(self, host_id):
+        """Return work already dispatched to one Host Agent but not terminally observed."""
+        with self._lock, self.connection.cursor() as c:
+            c.execute("SELECT count(*) AS n FROM eda_execution_requests WHERE host_id=%s AND status IN ('QUEUED','CLAIMED','RUNNING')", (host_id,))
+            return c.fetchone()["n"]
+
     def record_supervisor_process_started(self, execution_id, supervisor_id, pid):
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
             c.execute("UPDATE eda_execution_requests SET process_pid=%s,process_started_at=%s,status='RUNNING' WHERE execution_id=%s AND status='CLAIMED' AND supervisor_id=%s", (pid,self.now(),execution_id,supervisor_id)); return c.rowcount == 1

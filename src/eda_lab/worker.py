@@ -25,6 +25,10 @@ class PostgresWorker:
         # other Workers before any local process observation occurs.
         self.service.recover_stale_runs(stale_after_seconds=self.service.lease_seconds)
         while max_jobs is None or len(completed) + len(active) < max_jobs:
+            if self.service.execution_mode == "supervised" and self.service.execution_owner is not None:
+                host_id = self.service.execution_owner["host_id"]
+                if self.store.count_active_execution_requests(host_id) >= self.service.max_in_flight:
+                    break
             if len(active) >= concurrency:
                 done, _ = wait(active, return_when=FIRST_COMPLETED)
                 for future in done:
