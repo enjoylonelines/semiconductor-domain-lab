@@ -435,6 +435,11 @@ class Store:
                 if run.rowcount != 1:
                     self.connection.rollback()
                     return False
+                self.connection.execute(
+                    "UPDATE execution_requests SET status = 'UNAVAILABLE' "
+                    "WHERE job_id = ? AND attempt_no = ? AND status IN ('QUEUED','CLAIMED','RUNNING')",
+                    (job_id, attempt_no),
+                )
                 self.connection.commit()
                 return True
             except Exception:

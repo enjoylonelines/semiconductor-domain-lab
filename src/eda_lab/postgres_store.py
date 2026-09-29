@@ -170,6 +170,12 @@ class PostgresStore:
             c.execute("SELECT count(*) AS n FROM eda_execution_requests WHERE host_id=%s AND status IN ('QUEUED','CLAIMED','RUNNING')", (host_id,))
             return c.fetchone()["n"]
 
+    def release_terminal_execution_requests(self):
+        """Release legacy unwitnessed deliveries after their Attempt is terminal."""
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_execution_requests e SET status='UNAVAILABLE' FROM eda_attempts a WHERE e.job_id=a.job_id AND e.attempt_no=a.attempt_no AND e.status IN ('QUEUED','CLAIMED','RUNNING') AND a.status='ABANDONED' AND NOT EXISTS (SELECT 1 FROM eda_execution_witnesses w WHERE w.execution_id=e.execution_id)")
+            return c.rowcount
+
     def record_supervisor_process_started(self, execution_id, supervisor_id, pid):
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
             c.execute("UPDATE eda_execution_requests SET process_pid=%s,process_started_at=%s,status='RUNNING' WHERE execution_id=%s AND status='CLAIMED' AND supervisor_id=%s", (pid,self.now(),execution_id,supervisor_id)); return c.rowcount == 1
@@ -211,7 +217,15 @@ class PostgresStore:
             if c.rowcount != 1:
                 return False
             c.execute("UPDATE eda_runs SET status='FAILED',error=%s,updated_at=%s WHERE job_id=%s AND status='RUNNING'", (error,now,job_id))
-            return c.rowcount == 1
+            if c.rowcount != 1:
+                return False
+            # Recovery has established that this Attempt cannot be accepted, but
+            # it did not observe a runtime termination witness.  Do not leave
+            # that delivery in RUNNING: it would consume the Host Agent's
+            # bounded dispatch capacity forever.  UNAVAILABLE preserves the
+            # distinction from a Supervisor-observed COMPLETED request.
+            c.execute("UPDATE eda_execution_requests SET status='UNAVAILABLE' WHERE job_id=%s AND attempt_no=%s AND status IN ('QUEUED','CLAIMED','RUNNING')", (job_id,attempt_no))
+            return True
 
     def finalize_attempt_and_run(self, job_id, attempt_no, token, attempt_status, run_status, *, error_type=None,
                                  error=None, artifact_path=None, retry_class=None, run_fields=None, execution_owner=None):

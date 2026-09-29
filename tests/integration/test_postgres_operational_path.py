@@ -181,6 +181,24 @@ class PostgresRecoveryFenceTests(unittest.TestCase):
         self.assertEqual(result["attempts"][-1]["status"], "ABANDONED")
         self.assertFalse(store.transition_attempt(job_id, 1, "owner-token", "SUCCEEDED"))
 
+    def test_recovery_releases_an_unwitnessed_execution_request_from_dispatch_capacity(self):
+        store = self.store()
+        job_id = self.create_expired_attempt(store)
+        self.assertTrue(store.enqueue_execution_request("execution-a", job_id, 1, "host-a", {}))
+        self.assertEqual(store.count_active_execution_requests("host-a"), 1)
+        self.assertTrue(store.claim_recovery(job_id, 1, "reconciler", "recovery-token", 10))
+        self.assertTrue(store.finalize_recovery(
+            job_id, 1, "recovery-token", error_type="worker_unavailable", error="test recovery",
+        ))
+        self.assertEqual(store.count_active_execution_requests("host-a"), 0)
+        with store.connection.cursor() as cursor:
+            cursor.execute("SELECT status FROM eda_execution_requests WHERE execution_id='execution-a'")
+            self.assertEqual(cursor.fetchone()["status"], "UNAVAILABLE")
+            cursor.execute("UPDATE eda_execution_requests SET status='RUNNING' WHERE execution_id='execution-a'")
+        self.assertEqual(store.count_active_execution_requests("host-a"), 1)
+        self.assertEqual(store.release_terminal_execution_requests(), 1)
+        self.assertEqual(store.count_active_execution_requests("host-a"), 0)
+
     def test_worker_startup_scan_recovers_an_expired_attempt_without_a_queued_run(self):
         store = self.store()
         job_id = self.create_expired_attempt(store)

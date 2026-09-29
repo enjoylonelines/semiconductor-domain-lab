@@ -24,6 +24,12 @@ class PostgresWorker:
         # same-host profile. A database recovery claim serializes this against
         # other Workers before any local process observation occurs.
         self.service.recover_stale_runs(stale_after_seconds=self.service.lease_seconds)
+        # A prior release may have been interrupted after the Run/Attempt was
+        # fenced but before its unwitnessed delivery was retired. Reclaim only
+        # that terminal capacity; never infer child death from lease expiry.
+        release_terminal = getattr(self.store, "release_terminal_execution_requests", None)
+        if callable(release_terminal):
+            release_terminal()
         while max_jobs is None or len(completed) + len(active) < max_jobs:
             if self.service.execution_mode == "supervised" and self.service.execution_owner is not None:
                 host_id = self.service.execution_owner["host_id"]
