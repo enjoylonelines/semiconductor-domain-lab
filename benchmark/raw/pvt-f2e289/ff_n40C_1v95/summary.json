@@ -1,0 +1,87 @@
+{
+  "environment": {
+    "platform": "macOS-26.7-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "sta": "/tmp/eda-opensta-20260924/build/sta",
+    "python": "3.14.7",
+    "liberty": "/tmp/eda-mcmm-pdk/volare/sky130/versions/f2e289da6753f26157a308c492cf990fdcd4932d/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__ff_n40C_1v95.lib",
+    "liberty_sha256": "fb61d91c55a7f85b1989e8149d040b13ba5e7f5478f5bf0c3c16c5da30720139",
+    "netlist": "/Users/hb/Documents/Codex/phase5-workload/picorv32x64_sky130hd.v",
+    "netlist_sha256": "b3f09a42b23a9ff84c0084d4d284a9f8f5830b4c50f4972d68f59a18ea0938ce"
+  },
+  "workloads": {
+    "heavy": {
+      "runs": [
+        {
+          "run": 1,
+          "returncode": 0,
+          "valid": true,
+          "wall_clock_s_external": 7.337609374997555,
+          "time_real_s": 7.33,
+          "cpu_user_s": 7.04,
+          "cpu_sys_s": 0.25,
+          "peak_rss_bytes": 1269891072,
+          "report_bytes": 2317,
+          "stdout": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-01.stdout.log",
+          "stderr": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-01.stderr.log"
+        },
+        {
+          "run": 2,
+          "returncode": 0,
+          "valid": true,
+          "wall_clock_s_external": 7.375476250002976,
+          "time_real_s": 7.37,
+          "cpu_user_s": 7.08,
+          "cpu_sys_s": 0.24,
+          "peak_rss_bytes": 1274609664,
+          "report_bytes": 2317,
+          "stdout": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-02.stdout.log",
+          "stderr": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-02.stderr.log"
+        },
+        {
+          "run": 3,
+          "returncode": 0,
+          "valid": true,
+          "wall_clock_s_external": 7.383950457995525,
+          "time_real_s": 7.38,
+          "cpu_user_s": 7.08,
+          "cpu_sys_s": 0.25,
+          "peak_rss_bytes": 1274281984,
+          "report_bytes": 2317,
+          "stdout": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-03.stdout.log",
+          "stderr": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-03.stderr.log"
+        },
+        {
+          "run": 4,
+          "returncode": 0,
+          "valid": true,
+          "wall_clock_s_external": 7.4066431669925805,
+          "time_real_s": 7.4,
+          "cpu_user_s": 7.09,
+          "cpu_sys_s": 0.25,
+          "peak_rss_bytes": 1262403584,
+          "report_bytes": 2317,
+          "stdout": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-04.stdout.log",
+          "stderr": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-04.stderr.log"
+        },
+        {
+          "run": 5,
+          "returncode": 0,
+          "valid": true,
+          "wall_clock_s_external": 7.411528124997858,
+          "time_real_s": 7.4,
+          "cpu_user_s": 7.11,
+          "cpu_sys_s": 0.23,
+          "peak_rss_bytes": 1275117568,
+          "report_bytes": 2317,
+          "stdout": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-05.stdout.log",
+          "stderr": "benchmark/raw/pvt-f2e289/ff_n40C_1v95/heavy-05.stderr.log"
+        }
+      ],
+      "valid_runs": 5,
+      "median_real_s": 7.38,
+      "p95_real_s": 7.4,
+      "peak_rss_bytes_max": 1275117568
+    }
+  }
+}

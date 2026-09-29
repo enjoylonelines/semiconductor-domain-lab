@@ -5,7 +5,7 @@ Calibration is safe during Cycle 1. Scaling/fault execution is intentionally
 not wired to Cycle 1 ownership/recovery code.
 """
 from __future__ import annotations
-import argparse, json, os, platform, re, statistics, subprocess, time
+import argparse, hashlib, json, os, platform, re, statistics, subprocess, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +29,11 @@ def display_path(path: Path) -> str:
     except ValueError:
         return str(path)
 
-def run_once(sta: Path, script: Path, raw_dir: Path, name: str, idx: int):
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def run_once(sta: Path, script: Path, raw_dir: Path, name: str, idx: int, environment: dict[str, str]):
     raw_dir.mkdir(parents=True, exist_ok=True)
     out = raw_dir / f"{name}-{idx:02d}.stdout.log"
     err = raw_dir / f"{name}-{idx:02d}.stderr.log"
@@ -37,7 +41,7 @@ def run_once(sta: Path, script: Path, raw_dir: Path, name: str, idx: int):
     with out.open("wb") as stdout, err.open("wb") as stderr:
         proc = subprocess.run(
             ["/usr/bin/time", "-l", str(sta), "-no_init", "-exit", str(script)],
-            cwd=ROOT, stdout=stdout, stderr=stderr, check=False,
+            cwd=ROOT, stdout=stdout, stderr=stderr, env=environment, check=False,
         )
     wall = time.perf_counter() - before
     stderr_text = err.read_text(errors="replace")
@@ -61,16 +65,27 @@ def main():
     p.add_argument("--workload", choices=[*WORKLOADS, "all"], default="all")
     p.add_argument("--repeats", type=int, default=5)
     p.add_argument("--sta", type=Path, default=DEFAULT_STA)
+    p.add_argument("--liberty", type=Path)
+    p.add_argument("--netlist", type=Path)
     p.add_argument("--raw-dir", type=Path, default=ROOT/"benchmark/raw")
     p.add_argument("--output", type=Path, default=ROOT/"benchmark/raw/calibration-summary.json")
     args = p.parse_args()
     names = list(WORKLOADS) if args.workload == "all" else [args.workload]
+    environment = os.environ.copy()
+    if args.liberty:
+        environment["EDA_LIB"] = str(args.liberty)
+    if args.netlist:
+        environment["EDA_NETLIST"] = str(args.netlist)
     payload = {"environment": {
         "platform": platform.platform(), "machine": platform.machine(),
         "sta": str(args.sta), "python": platform.python_version(),
+        "liberty": str(args.liberty) if args.liberty else environment.get("EDA_LIB"),
+        "liberty_sha256": sha256(args.liberty) if args.liberty else None,
+        "netlist": str(args.netlist) if args.netlist else environment.get("EDA_NETLIST"),
+        "netlist_sha256": sha256(args.netlist) if args.netlist else None,
     }, "workloads": {}}
     for name in names:
-        runs = [run_once(args.sta, WORKLOADS[name], args.raw_dir, name, i+1)
+        runs = [run_once(args.sta, WORKLOADS[name], args.raw_dir, name, i+1, environment)
                 for i in range(args.repeats)]
         valid = [r for r in runs if r["valid"]]
         vals = [r["time_real_s"] for r in valid if r["time_real_s"] is not None]
