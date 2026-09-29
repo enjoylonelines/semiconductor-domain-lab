@@ -35,7 +35,7 @@ services:
       EDA_OPENSTA_LIBERTY_PATH: /opt/opensta/examples/sky130hd_tt.lib.gz
       EDA_OPENSTA_FIXTURE_DIR: /app/docs/evidence/2026-09-24-real-sta
       EDA_WORKER_CONCURRENCY: "1"
-      EDA_MAX_IN_FLIGHT: "2"
+      EDA_MAX_IN_FLIGHT: "${EDA_MAX_IN_FLIGHT:-2}"
     networks: [eda_internal]
     depends_on:
       postgres:
