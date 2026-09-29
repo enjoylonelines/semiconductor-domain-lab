@@ -15,13 +15,13 @@
 |---|---:|---:|---:|---:|---:|---:|
 | Small | tiny, 3 mapped cells | 6 | 0.21s | 0.2375s | 53,166,080 | 12,211 |
 | Medium | PicoRV32, 6,404 mapped cells | 6 | 0.33s | 0.355s | 76,414,976 | 29,468 |
-| Heavy | PicoRV32 ×16, effective 102,464 mapped cell instances | 5 | 1.91s | 1.936s | 366,362,624 | 19,030 |
+| Heavy | PicoRV32 ×64, effective 409,856 mapped cell instances | 5 | 6.83s | 7.194s | 1,279,049,728 | report path count bounded |
 
 Heavy report byte 수가 Medium보다 작은 것은 report command가 출력 path 개수를 제한하기 때문이다. workload 크기 지표로 report bytes를 사용하지 않는다.
 
 Small raw real: 0.24, 0.21, 0.21, 0.23, 0.20, 0.21s.
 Medium raw real: 0.36, 0.33, 0.34, 0.33, 0.32, 0.33s.
-Heavy raw real: 1.94, 1.92, 1.91, 1.90, 1.91s.
+Heavy 후보 ×16 raw real: 1.94, 1.92, 1.91, 1.90, 1.91s. ×32는 3.39, 3.39, 3.38, 3.31, 3.78s로 사전 목표 5~15s에 못 미쳐 확장했다. 최종 Heavy ×64 raw real: 7.21, 7.13, 6.64, 6.83, 6.56s. 목표 구간에 처음 진입했으므로 더 키우지 않았다.
 
 첫 PicoRV32 probe는 unsupported Tcl command `remove_from_collection` 때문에 timing report 전에 종료되어 **폐기**했으며 위 집계에 포함하지 않았다.
 
@@ -48,7 +48,8 @@ harness canonical raw output: `benchmark/raw/`.
 - CPU saturation/memory pressure/DB coordination scaling limit 미측정.
 - worker SIGKILL, recovery time, failure overhead 미측정.
 - 따라서 “worker N개가 최적”, “N% 빨라졌다”, “장애에도 안전하다”는 아직 주장할 수 없다.
-- Heavy는 production workload/대규모 EDA/실무 규모의 증거가 아니다. 공개 CPU RTL을 반복 인스턴스화한 calibration fixture다.
+- Heavy는 production workload/대규모 EDA/실무 규모의 증거가 아니다. 공개 CPU RTL을 64개 반복 인스턴스화한 calibration fixture다.
+- 8개 Heavy worker가 동시에 각 1개 job을 실행할 때의 메모리는 아직 측정하지 않았다. 단일 job peak RSS를 단순 곱한 값을 실제 동시 실행 메모리라고 주장하지 않는다.
 
 ## STOP 확인
 1. Medium/Heavy가 실제 OpenSTA에서 재현됨: 충족.

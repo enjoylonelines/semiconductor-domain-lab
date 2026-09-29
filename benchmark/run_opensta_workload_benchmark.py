@@ -13,7 +13,7 @@ DEFAULT_STA = Path("/tmp/eda-opensta-20260924/build/sta")
 WORKLOADS = {
     "small": ROOT / "benchmark/small_calibration.tcl",
     "medium": ROOT / "benchmark/picorv32_calibration.tcl",
-    "heavy": ROOT / "benchmark/picorv32x16_calibration.tcl",
+    "heavy": ROOT / "benchmark/picorv32x64_calibration.tcl",
 }
 
 def percentile(values, q):

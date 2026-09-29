@@ -42,19 +42,19 @@
       "report_bytes": 29468
     },
     "heavy": {
-      "source": "calibration-only 16-instance wrapper around same PicoRV32 mapped module",
-      "effective_mapped_cell_instances": 102464,
+      "source": "calibration-only 64-instance wrapper around same PicoRV32 mapped module",
+      "effective_mapped_cell_instances": 409856,
       "runs_real_s": [
-        1.94,
-        1.92,
-        1.91,
-        1.9,
-        1.91
+        7.21,
+        7.13,
+        6.64,
+        6.83,
+        6.56
       ],
-      "median_real_s": 1.91,
-      "p95_real_s": 1.936,
-      "peak_rss_bytes_max": 366362624,
-      "report_bytes": 19030
+      "median_real_s": 6.83,
+      "p95_real_s": 7.194,
+      "peak_rss_bytes_max": 1279049728,
+      "note": "first tested size entering predeclared 5-15s single-STA target; x32 median 3.39s, so scaling stopped at x64"
     }
   },
   "rejected_candidate": {
@@ -76,5 +76,32 @@
     "worker 1/2/4/8 scaling",
     "throughput/latency under concurrent jobs",
     "fault injection/recovery overhead"
-  ]
+  ],
+  "calibration_steps": {
+    "x16": {
+      "median_real_s": 1.91
+    },
+    "x32": {
+      "runs_real_s": [
+        3.39,
+        3.39,
+        3.38,
+        3.31,
+        3.78
+      ],
+      "median_real_s": 3.39,
+      "peak_rss_bytes_max": 665403392
+    },
+    "x64": {
+      "runs_real_s": [
+        7.21,
+        7.13,
+        6.64,
+        6.83,
+        6.56
+      ],
+      "median_real_s": 6.83,
+      "peak_rss_bytes_max": 1279049728
+    }
+  }
 }
