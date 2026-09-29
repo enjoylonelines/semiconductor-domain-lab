@@ -57,3 +57,6 @@ post-layout parasitics, no operating-condition matrix beyond these three
 Liberty corners, and no physical multi-host capacity claim. The prior
 single-corner performance evidence remains valid only for its recorded input;
 new comparisons must cite the PVT raw set above.
+
+The SS corner has also been exercised through the supervised live-child loss
+path; see [SS Heavy Supervisor recovery evidence](2026-09-29-ss-heavy-supervisor-recovery.md).

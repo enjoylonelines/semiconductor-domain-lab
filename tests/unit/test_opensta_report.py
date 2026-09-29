@@ -4,6 +4,7 @@ from pathlib import Path
 
 from eda_lab.models import AdapterRunResult, JobSpec
 from eda_lab.parser import parse_report
+from eda_lab.runner import OpenStaSubprocessAdapter
 from eda_lab.service import JobService
 from eda_lab.store import Store
 
@@ -12,6 +13,16 @@ EVIDENCE = Path(__file__).resolve().parents[2] / "docs/evidence/2026-09-24-real-
 
 
 class OpenStaSetupMaxTests(unittest.TestCase):
+    def test_opensta_adapter_rejects_a_job_with_a_different_configured_corner(self):
+        adapter = OpenStaSubprocessAdapter(
+            sta_path=Path("/missing/sta"), liberty_path=Path("/missing/lib.lib"),
+            fixture_dir=Path("/missing/fixtures"), expected_corner="ss_100C_1v60",
+        )
+        tt_job = JobSpec("corner-mismatch", "tiny", "research", "opensta_setup_max", "tt_025C_1v80", 0, "ns")
+
+        with self.assertRaisesRegex(ValueError, "does not match job corner"):
+            adapter.run(tt_job)
+
     def test_real_opensta_met_report_normalizes_against_recorded_oracle(self):
         result = parse_report(EVIDENCE / "normal.log")
 

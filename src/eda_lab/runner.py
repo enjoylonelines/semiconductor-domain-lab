@@ -69,6 +69,7 @@ class OpenStaSubprocessAdapter:
         script_name: str = "run.tcl",
         timeout_seconds: float = 30,
         termination_grace_seconds: float = 1,
+        expected_corner: str | None = None,
         process_observer: Callable[[int, float], None] | None = None,
         work_root: Path | None = None,
     ):
@@ -80,6 +81,7 @@ class OpenStaSubprocessAdapter:
         self.script_name = script_name
         self.timeout_seconds = timeout_seconds
         self.termination_grace_seconds = termination_grace_seconds
+        self.expected_corner = expected_corner
         self.process_observer = process_observer
         self.work_root = Path(work_root) if work_root is not None else None
         self._additional_process_observers: list[Callable[[int, float], None]] = []
@@ -136,6 +138,10 @@ class OpenStaSubprocessAdapter:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
     def run(self, spec: JobSpec) -> AdapterRunResult:
+        if self.expected_corner is not None and spec.corner != self.expected_corner:
+            raise ValueError(
+                f"OpenSTA adapter corner {self.expected_corner!r} does not match job corner {spec.corner!r}"
+            )
         if not self.sta_path.is_file():
             raise FileNotFoundError(f"OpenSTA executable is missing: {self.sta_path}")
         if not self.liberty_path.is_file():

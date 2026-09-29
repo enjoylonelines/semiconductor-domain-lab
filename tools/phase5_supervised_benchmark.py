@@ -20,6 +20,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dsn", default=os.environ.get("EDA_POSTGRES_TEST_DSN"))
     parser.add_argument("--runs", type=int, required=True)
+    parser.add_argument("--corner", default="tt_025C_1v80")
     parser.add_argument("--timeout-seconds", type=float, default=600)
     args = parser.parse_args()
     if not args.dsn:
@@ -43,7 +44,7 @@ def main() -> None:
         submit_latencies = []
         for job_id in jobs:
             started = time.monotonic()
-            service.submit(JobSpec(job_id, "picorv32x64", "research", "opensta_setup_max", "tt_025C_1v80", 0, "ns"))
+            service.submit(JobSpec(job_id, "picorv32x64", "research", "opensta_setup_max", args.corner, 0, "ns"))
             submit_latencies.append(time.monotonic() - started)
         deadline = time.monotonic() + args.timeout_seconds
         while time.monotonic() < deadline:
@@ -52,6 +53,7 @@ def main() -> None:
                 completed_at = time.monotonic()
                 print(json.dumps({
                     "environment": "bounded same-VM Linux containers; one Host Agent; calibrated Heavy OpenSTA",
+                    "corner": args.corner,
                     "runs": args.runs,
                     "elapsed_seconds": round(completed_at - submitted_at, 6),
                     "throughput_runs_per_second": round(args.runs / (completed_at - submitted_at), 6),
