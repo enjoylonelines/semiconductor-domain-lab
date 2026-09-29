@@ -64,7 +64,8 @@ class OpenStaSubprocessAdapter:
         sta_path: Path,
         liberty_path: Path,
         fixture_dir: Path,
-        sdc_name: str = "normal.sdc",
+        sdc_name: str | None = "normal.sdc",
+        netlist_path: Path | None = None,
         script_name: str = "run.tcl",
         timeout_seconds: float = 30,
         termination_grace_seconds: float = 1,
@@ -75,6 +76,7 @@ class OpenStaSubprocessAdapter:
         self.liberty_path = Path(liberty_path)
         self.fixture_dir = Path(fixture_dir)
         self.sdc_name = sdc_name
+        self.netlist_path = Path(netlist_path) if netlist_path is not None else None
         self.script_name = script_name
         self.timeout_seconds = timeout_seconds
         self.termination_grace_seconds = termination_grace_seconds
@@ -140,21 +142,28 @@ class OpenStaSubprocessAdapter:
             raise FileNotFoundError(f"OpenSTA Liberty file is missing: {self.liberty_path}")
 
         script = self._required_fixture(self.script_name)
-        sdc = self._required_fixture(self.sdc_name)
-        netlist = self._required_fixture("tiny_mapped.v")
+        sdc = self._required_fixture(self.sdc_name) if self.sdc_name else None
+        netlist = self.netlist_path or self._required_fixture("tiny_mapped.v")
+        if not netlist.is_file():
+            raise FileNotFoundError(f"required OpenSTA netlist is missing: {netlist}")
         if self.work_root is not None:
             self.work_root.mkdir(parents=True, exist_ok=True)
             directory = Path(tempfile.mkdtemp(prefix=f"eda-opensta-{spec.job_id}-", dir=self.work_root))
         else:
             directory = Path(tempfile.mkdtemp(prefix=f"eda-opensta-{spec.job_id}-"))
-        for source in (script, sdc, netlist):
+        sources = [script, *( [sdc] if sdc is not None else [] )]
+        if self.netlist_path is None:
+            sources.append(netlist)
+        for source in sources:
             shutil.copy2(source, directory / source.name)
 
         environment = os.environ.copy()
         environment.update({
             "EDA_LIB": str(self.liberty_path),
-            "EDA_SDC": str(directory / sdc.name),
+            "EDA_NETLIST": str(netlist if self.netlist_path is not None else directory / netlist.name),
         })
+        if sdc is not None:
+            environment["EDA_SDC"] = str(directory / sdc.name)
         process = subprocess.Popen(
             [str(self.sta_path), "-no_init", "-exit", script.name],
             cwd=directory,
@@ -206,6 +215,6 @@ class OpenStaSubprocessAdapter:
             "tool_path": str(self.sta_path),
             "liberty_sha256": self._sha256(self.liberty_path),
             "script_sha256": self._sha256(script),
-            "sdc_sha256": self._sha256(sdc),
+            "sdc_sha256": self._sha256(sdc) if sdc is not None else None,
             "netlist_sha256": self._sha256(netlist),
         })

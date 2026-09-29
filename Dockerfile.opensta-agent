@@ -29,6 +29,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 COPY docs/evidence/2026-09-24-real-sta ./docs/evidence/2026-09-24-real-sta
+COPY benchmark ./benchmark
 RUN python3 -m venv /opt/venv \
     && /opt/venv/bin/pip install --no-cache-dir .
 ENV PATH=/opt/venv/bin:$PATH
