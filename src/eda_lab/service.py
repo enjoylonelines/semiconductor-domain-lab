@@ -40,7 +40,7 @@ class JobService:
         self.recovery_lease_seconds = recovery_lease_seconds
         self.orphan_grace_seconds = orphan_grace_seconds
         self.max_in_flight = max_in_flight
-        if execution_mode not in {"local", "external"}:
+        if execution_mode not in {"local", "external", "supervised"}:
             raise ValueError("execution_mode must be local or external")
         self.execution_mode = execution_mode
         if backpressure_retry_after_seconds <= 0:
@@ -238,10 +238,20 @@ class JobService:
                 lease_token = uuid4().hex
                 if not self.store.acquire_attempt_lease(spec.job_id, attempt_no, self.worker_id, lease_token, self.lease_seconds):
                     raise RuntimeError("attempt lease acquisition failed")
+                execution_id = uuid4().hex
                 if self.execution_owner is not None and not self.store.record_attempt_execution(
-                    spec.job_id, attempt_no, lease_token, **self.execution_owner, execution_id=uuid4().hex
+                    spec.job_id, attempt_no, lease_token, **self.execution_owner, execution_id=execution_id
                 ):
                     raise RuntimeError("attempt execution owner registration failed")
+                if self.execution_mode == "supervised":
+                    if self.execution_owner is None:
+                        raise RuntimeError("supervised execution requires a Host Agent owner")
+                    if not self.store.enqueue_execution_request(
+                        execution_id, spec.job_id, attempt_no, self.execution_owner["host_id"],
+                        {"spec": self.spec_payload(spec), "lease_token": lease_token, "execution_owner": self.execution_owner},
+                    ):
+                        raise RuntimeError("execution request enqueue failed")
+                    return
                 heartbeat_stop = Event()
                 heartbeat_thread = Thread(
                     target=self._heartbeat_loop, args=(heartbeat_stop, spec.job_id, attempt_no, lease_token), daemon=True
@@ -352,8 +362,10 @@ class JobService:
             ):
                 # A Host Agent may only observe a child it owns locally. A remote
                 # PID is neither evidence of life nor authorization to signal it.
-                deferred_remote_execution.append(run["job_id"])
-                continue
+                witness = self.store.get_termination_witness(attempt.get("execution_id"))
+                if witness is None or witness["kind"] not in {"RUNTIME_TERMINATED", "PROCESS_EXITED"}:
+                    deferred_remote_execution.append(run["job_id"])
+                    continue
             if attempt["lease_token"] and (run["job_id"], attempt["attempt_no"]) not in expired_leases:
                 skipped_active_lease.append(run["job_id"])
                 continue
@@ -393,9 +405,16 @@ class JobService:
                     else:
                         recovered.append(run["job_id"])
                     continue
+            witness = self.store.get_termination_witness(attempt.get("execution_id"))
+            if witness is not None and witness["kind"] in {"RUNTIME_TERMINATED", "PROCESS_EXITED"}:
+                error_type = "supervisor_terminated"
+                error = "recovery: supervised execution ended without an accepted completion"
+            else:
+                error_type = "worker_unavailable"
+                error = "recovery: stale RUNNING record without live worker"
             if self.store.finalize_recovery(
                 run["job_id"], attempt["attempt_no"], recovery_token,
-                error_type="worker_unavailable", error="recovery: stale RUNNING record without live worker",
+                error_type=error_type, error=error,
             ):
                 recovered.append(run["job_id"])
             else:

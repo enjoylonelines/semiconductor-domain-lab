@@ -50,6 +50,16 @@ class Store:
           host_id TEXT PRIMARY KEY, current_epoch TEXT NOT NULL, current_session_id TEXT NOT NULL,
           updated_at REAL NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS execution_requests (
+          execution_id TEXT PRIMARY KEY, job_id TEXT NOT NULL, attempt_no INTEGER NOT NULL,
+          host_id TEXT NOT NULL, status TEXT NOT NULL, payload TEXT NOT NULL, created_at REAL NOT NULL,
+          supervisor_id TEXT, claimed_at REAL, process_pid INTEGER, process_started_at REAL
+        );
+        CREATE TABLE IF NOT EXISTS execution_witnesses (
+          execution_id TEXT PRIMARY KEY REFERENCES execution_requests(execution_id),
+          kind TEXT NOT NULL, observed_at REAL NOT NULL, process_exit_code INTEGER,
+          artifact_path TEXT, detail TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS metric_rows (
           id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL REFERENCES runs(job_id),
           metric_name TEXT NOT NULL, stage TEXT NOT NULL, corner TEXT NOT NULL,
@@ -92,6 +102,8 @@ class Store:
         self._add_column_if_missing("attempts", "recovery_owner", "TEXT")
         self._add_column_if_missing("attempts", "recovery_token", "TEXT")
         self._add_column_if_missing("attempts", "recovery_expires_at", "REAL")
+        self._add_column_if_missing("execution_requests", "process_pid", "INTEGER")
+        self._add_column_if_missing("execution_requests", "process_started_at", "REAL")
         self.connection.commit()
 
     def close(self) -> None:
@@ -308,6 +320,65 @@ class Store:
             )
             self.connection.commit()
             return cursor.rowcount == 1
+
+    def enqueue_execution_request(self, execution_id: str, job_id: str, attempt_no: int, host_id: str, payload: dict) -> bool:
+        with self._lock:
+            cursor = self.connection.execute(
+                "INSERT INTO execution_requests(execution_id,job_id,attempt_no,host_id,status,payload,created_at) VALUES(?,?,?,?,'QUEUED',?,?) ON CONFLICT(execution_id) DO NOTHING",
+                (execution_id, job_id, attempt_no, host_id, json.dumps(payload, sort_keys=True), self._now()),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def claim_execution_request(self, host_id: str, supervisor_id: str) -> dict | None:
+        with self._lock:
+            self.connection.execute("BEGIN IMMEDIATE")
+            try:
+                row = self.connection.execute(
+                    "SELECT execution_id, job_id, attempt_no, payload FROM execution_requests WHERE host_id=? AND status='QUEUED' ORDER BY created_at LIMIT 1",
+                    (host_id,),
+                ).fetchone()
+                if row is None:
+                    self.connection.commit(); return None
+                claimed = self.connection.execute(
+                    "UPDATE execution_requests SET status='CLAIMED',supervisor_id=?,claimed_at=? WHERE execution_id=? AND status='QUEUED'",
+                    (supervisor_id, self._now(), row["execution_id"]),
+                )
+                if claimed.rowcount != 1:
+                    self.connection.rollback(); return None
+                self.connection.commit()
+                return {**dict(row), "payload": json.loads(row["payload"])}
+            except Exception:
+                self.connection.rollback(); raise
+
+    def record_supervisor_process_started(self, execution_id: str, supervisor_id: str, pid: int) -> bool:
+        with self._lock:
+            cursor = self.connection.execute(
+                "UPDATE execution_requests SET process_pid=?,process_started_at=?,status='RUNNING' WHERE execution_id=? AND status='CLAIMED' AND supervisor_id=?",
+                (pid, self._now(), execution_id, supervisor_id),
+            )
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def record_termination_witness(self, execution_id: str, *, kind: str, process_exit_code: int | None, artifact_path: str | None, detail: str) -> bool:
+        if kind not in {"PROCESS_EXITED", "RUNTIME_TERMINATED"}:
+            raise ValueError("unsupported termination witness")
+        with self._lock:
+            cursor = self.connection.execute(
+                "INSERT INTO execution_witnesses(execution_id,kind,observed_at,process_exit_code,artifact_path,detail) SELECT execution_id,?,?,?,?,? FROM execution_requests WHERE execution_id=? ON CONFLICT(execution_id) DO NOTHING",
+                (kind, self._now(), process_exit_code, artifact_path, detail, execution_id),
+            )
+            if cursor.rowcount:
+                self.connection.execute("UPDATE execution_requests SET status='COMPLETED' WHERE execution_id=? AND status IN ('CLAIMED','RUNNING')", (execution_id,))
+            self.connection.commit()
+            return cursor.rowcount == 1
+
+    def get_termination_witness(self, execution_id: str | None) -> dict | None:
+        if not execution_id:
+            return None
+        with self._lock:
+            row = self.connection.execute("SELECT * FROM execution_witnesses WHERE execution_id=?", (execution_id,)).fetchone()
+            return dict(row) if row else None
 
     def transition_attempt(self, job_id: str, attempt_no: int, token: str, status: str, *, error_type: str | None = None,
                            error: str | None = None, artifact_path: str | None = None, retry_class: str | None = None) -> bool:

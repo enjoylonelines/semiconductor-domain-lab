@@ -47,6 +47,8 @@ class PostgresStore:
               PRIMARY KEY(job_id, attempt_no));
             CREATE TABLE IF NOT EXISTS eda_host_sessions (session_id text PRIMARY KEY, host_id text NOT NULL, host_epoch text NOT NULL, heartbeat_at double precision NOT NULL, lease_expires_at double precision NOT NULL);
             CREATE TABLE IF NOT EXISTS eda_hosts (host_id text PRIMARY KEY, current_epoch text NOT NULL, current_session_id text NOT NULL, updated_at double precision NOT NULL);
+            CREATE TABLE IF NOT EXISTS eda_execution_requests (execution_id text PRIMARY KEY, job_id text NOT NULL, attempt_no integer NOT NULL, host_id text NOT NULL, status text NOT NULL, payload jsonb NOT NULL, created_at double precision NOT NULL, supervisor_id text, claimed_at double precision, process_pid integer, process_started_at double precision);
+            CREATE TABLE IF NOT EXISTS eda_execution_witnesses (execution_id text PRIMARY KEY REFERENCES eda_execution_requests(execution_id), kind text NOT NULL, observed_at double precision NOT NULL, process_exit_code integer, artifact_path text, detail text NOT NULL);
             CREATE TABLE IF NOT EXISTS eda_metric_rows (id bigserial PRIMARY KEY, job_id text NOT NULL REFERENCES eda_runs(job_id), metric_name text NOT NULL, stage text NOT NULL, corner text NOT NULL, value double precision NOT NULL, unit text NOT NULL);
             CREATE INDEX IF NOT EXISTS idx_eda_metric_rows_stage_corner ON eda_metric_rows(stage, corner, metric_name);
             CREATE TABLE IF NOT EXISTS eda_revisions (revision_id text PRIMARY KEY, design_id text NOT NULL, source_revision text NOT NULL, liberty_hash text NOT NULL, sdc_hash text NOT NULL, tool_version text NOT NULL, parser_version text NOT NULL);
@@ -65,6 +67,8 @@ class PostgresStore:
                 ("execution_id", "text"),
             ):
                 c.execute(f"ALTER TABLE eda_attempts ADD COLUMN IF NOT EXISTS {column} {definition}")
+            c.execute("ALTER TABLE eda_execution_requests ADD COLUMN IF NOT EXISTS process_pid integer")
+            c.execute("ALTER TABLE eda_execution_requests ADD COLUMN IF NOT EXISTS process_started_at double precision")
 
     def close(self) -> None:
         with self._lock:
@@ -147,6 +151,34 @@ class PostgresStore:
         now = self.now()
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
             c.execute("UPDATE eda_attempts SET execution_host_id=%s,execution_host_epoch=%s,execution_host_session=%s,execution_id=%s,updated_at=%s WHERE job_id=%s AND attempt_no=%s AND status='RUNNING' AND lease_token=%s AND EXISTS (SELECT 1 FROM eda_host_sessions s JOIN eda_hosts h ON h.current_session_id=s.session_id WHERE s.session_id=%s AND s.host_id=%s AND s.host_epoch=%s AND s.lease_expires_at >= %s)", (host_id,host_epoch,session_id,execution_id,now,job_id,attempt_no,token,session_id,host_id,host_epoch,now)); return c.rowcount==1
+
+    def enqueue_execution_request(self, execution_id, job_id, attempt_no, host_id, payload):
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("INSERT INTO eda_execution_requests(execution_id,job_id,attempt_no,host_id,status,payload,created_at) VALUES(%s,%s,%s,%s,'QUEUED',%s::jsonb,%s) ON CONFLICT(execution_id) DO NOTHING", (execution_id,job_id,attempt_no,host_id,json.dumps(payload, sort_keys=True),self.now())); return c.rowcount==1
+
+    def claim_execution_request(self, host_id, supervisor_id):
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("SELECT execution_id,job_id,attempt_no,payload FROM eda_execution_requests WHERE host_id=%s AND status='QUEUED' ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1", (host_id,))
+            row=c.fetchone()
+            if row is None: return None
+            c.execute("UPDATE eda_execution_requests SET status='CLAIMED',supervisor_id=%s,claimed_at=%s WHERE execution_id=%s AND status='QUEUED'", (supervisor_id,self.now(),row['execution_id']))
+            return row if c.rowcount == 1 else None
+
+    def record_supervisor_process_started(self, execution_id, supervisor_id, pid):
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("UPDATE eda_execution_requests SET process_pid=%s,process_started_at=%s,status='RUNNING' WHERE execution_id=%s AND status='CLAIMED' AND supervisor_id=%s", (pid,self.now(),execution_id,supervisor_id)); return c.rowcount == 1
+
+    def record_termination_witness(self, execution_id, *, kind, process_exit_code, artifact_path, detail):
+        if kind not in {"PROCESS_EXITED", "RUNTIME_TERMINATED"}: raise ValueError("unsupported termination witness")
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("INSERT INTO eda_execution_witnesses(execution_id,kind,observed_at,process_exit_code,artifact_path,detail) SELECT execution_id,%s,%s,%s,%s,%s FROM eda_execution_requests WHERE execution_id=%s ON CONFLICT(execution_id) DO NOTHING", (kind,self.now(),process_exit_code,artifact_path,detail,execution_id))
+            if not c.rowcount: return False
+            c.execute("UPDATE eda_execution_requests SET status='COMPLETED' WHERE execution_id=%s AND status IN ('CLAIMED','RUNNING')", (execution_id,)); return True
+
+    def get_termination_witness(self, execution_id):
+        if not execution_id: return None
+        with self._lock, self.connection.cursor() as c:
+            c.execute("SELECT * FROM eda_execution_witnesses WHERE execution_id=%s", (execution_id,)); return c.fetchone()
 
     def transition_attempt(self, job_id, attempt_no, token, status, *, error_type=None, error=None, artifact_path=None, retry_class=None):
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:

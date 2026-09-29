@@ -94,9 +94,18 @@ class OpenStaSubprocessAdapter:
             self._terminate_process_group(process, signal.SIGTERM)
             return True
 
-    def add_process_observer(self, observer: Callable[[int, float], None]) -> None:
+    def add_process_observer(self, observer: Callable[[int, float], None]) -> Callable[[], None]:
         with self._lock:
             self._additional_process_observers.append(observer)
+
+        def remove() -> None:
+            with self._lock:
+                try:
+                    self._additional_process_observers.remove(observer)
+                except ValueError:
+                    pass
+
+        return remove
 
     def _notify_process_started(self, pid: int, started_at: float) -> None:
         if self.process_observer is not None:
@@ -156,6 +165,9 @@ class OpenStaSubprocessAdapter:
             start_new_session=True,
         )
         self._notify_process_started(process.pid, time.monotonic())
+        hold_after_start = float(os.environ.get("EDA_OPENSTA_HOLD_AFTER_START_SECONDS", "0"))
+        if hold_after_start > 0:
+            time.sleep(hold_after_start)
         with self._lock:
             self._processes[spec.job_id] = process
         try:

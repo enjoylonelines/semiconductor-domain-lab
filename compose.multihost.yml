@@ -28,10 +28,12 @@ services:
       EDA_HOST_ID: m1-agent-a
       EDA_HOST_EPOCH: boot-a
       EDA_AGENT_LEASE_SECONDS: "3"
+      EDA_EXECUTION_LEASE_SECONDS: "30"
+      EDA_EXECUTION_MODE: supervised
+      EDA_WORKER_ID: worker-a
       EDA_OPENSTA_PATH: /opt/opensta/build/sta
       EDA_OPENSTA_LIBERTY_PATH: /opt/opensta/examples/sky130hd_tt.lib.gz
       EDA_OPENSTA_FIXTURE_DIR: /app/docs/evidence/2026-09-24-real-sta
-      EDA_OPENSTA_WORK_ROOT: /artifacts
       EDA_WORKER_CONCURRENCY: "1"
       EDA_MAX_IN_FLIGHT: "2"
     networks: [eda_internal]
@@ -39,11 +41,11 @@ services:
       postgres:
         condition: service_healthy
     cpus: "0.60"
-    mem_limit: 512m
+    mem_limit: 128m
     pids_limit: 64
     read_only: true
     tmpfs: [/tmp]
-    volumes: [agent_a_artifacts:/artifacts]
+    volumes: []
 
   host-agent-b:
     build:
@@ -55,10 +57,12 @@ services:
       EDA_HOST_ID: m1-agent-b
       EDA_HOST_EPOCH: boot-b
       EDA_AGENT_LEASE_SECONDS: "3"
+      EDA_EXECUTION_LEASE_SECONDS: "30"
+      EDA_EXECUTION_MODE: supervised
+      EDA_WORKER_ID: worker-b
       EDA_OPENSTA_PATH: /opt/opensta/build/sta
       EDA_OPENSTA_LIBERTY_PATH: /opt/opensta/examples/sky130hd_tt.lib.gz
       EDA_OPENSTA_FIXTURE_DIR: /app/docs/evidence/2026-09-24-real-sta
-      EDA_OPENSTA_WORK_ROOT: /artifacts
       EDA_WORKER_CONCURRENCY: "1"
       EDA_MAX_IN_FLIGHT: "2"
     networks: [eda_internal]
@@ -66,7 +70,49 @@ services:
       postgres:
         condition: service_healthy
     cpus: "0.60"
-    mem_limit: 512m
+    mem_limit: 128m
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp]
+    volumes: []
+
+  supervisor-a:
+    build: { context: ., dockerfile: Dockerfile.opensta-agent }
+    command: ["python3", "-m", "eda_lab", "supervisor"]
+    environment:
+      EDA_POSTGRES_DSN: postgresql://eda:eda@postgres:5432/eda_m1
+      EDA_HOST_ID: m1-agent-a
+      EDA_SUPERVISOR_ID: supervisor-a
+      EDA_EXECUTION_LEASE_SECONDS: "30"
+      EDA_OPENSTA_PATH: /opt/opensta/build/sta
+      EDA_OPENSTA_LIBERTY_PATH: /opt/opensta/examples/sky130hd_tt.lib.gz
+      EDA_OPENSTA_FIXTURE_DIR: /app/docs/evidence/2026-09-24-real-sta
+      EDA_OPENSTA_WORK_ROOT: /artifacts
+    networks: [eda_internal]
+    depends_on: { postgres: { condition: service_healthy } }
+    cpus: "0.40"
+    mem_limit: 384m
+    pids_limit: 64
+    read_only: true
+    tmpfs: [/tmp]
+    volumes: [agent_a_artifacts:/artifacts]
+
+  supervisor-b:
+    build: { context: ., dockerfile: Dockerfile.opensta-agent }
+    command: ["python3", "-m", "eda_lab", "supervisor"]
+    environment:
+      EDA_POSTGRES_DSN: postgresql://eda:eda@postgres:5432/eda_m1
+      EDA_HOST_ID: m1-agent-b
+      EDA_SUPERVISOR_ID: supervisor-b
+      EDA_EXECUTION_LEASE_SECONDS: "30"
+      EDA_OPENSTA_PATH: /opt/opensta/build/sta
+      EDA_OPENSTA_LIBERTY_PATH: /opt/opensta/examples/sky130hd_tt.lib.gz
+      EDA_OPENSTA_FIXTURE_DIR: /app/docs/evidence/2026-09-24-real-sta
+      EDA_OPENSTA_WORK_ROOT: /artifacts
+    networks: [eda_internal]
+    depends_on: { postgres: { condition: service_healthy } }
+    cpus: "0.40"
+    mem_limit: 384m
     pids_limit: 64
     read_only: true
     tmpfs: [/tmp]
