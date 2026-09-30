@@ -1,0 +1,38 @@
+{
+  "scope": "one SS Heavy child per bounded Docker container",
+  "runs": [
+    {
+      "limit_gib": 1.5,
+      "repeat": 1,
+      "docker_returncode": 0,
+      "opensta_exit_code": 0,
+      "wall_seconds": 9.567626749994815,
+      "memory_peak_bytes": 1275858944,
+      "oom_kill": 0,
+      "valid_report": true,
+      "raw_dir": "benchmark/raw/ss-memory-headroom-f2e289/1.5GiB/run-01"
+    },
+    {
+      "limit_gib": 1.5,
+      "repeat": 2,
+      "docker_returncode": 0,
+      "opensta_exit_code": 0,
+      "wall_seconds": 9.20811862499977,
+      "memory_peak_bytes": 1275899904,
+      "oom_kill": 0,
+      "valid_report": true,
+      "raw_dir": "benchmark/raw/ss-memory-headroom-f2e289/1.5GiB/run-02"
+    },
+    {
+      "limit_gib": 1.5,
+      "repeat": 3,
+      "docker_returncode": 0,
+      "opensta_exit_code": 0,
+      "wall_seconds": 11.751928124998813,
+      "memory_peak_bytes": 1275895808,
+      "oom_kill": 0,
+      "valid_report": true,
+      "raw_dir": "benchmark/raw/ss-memory-headroom-f2e289/1.5GiB/run-03"
+    }
+  ]
+}
