@@ -1,0 +1,50 @@
+OpenSTA 3.1.0 396536743f Copyright (c) 2026, Parallax Software, Inc.
+License GPLv3: GNU GPL version 3 <http://gnu.org/licenses/gpl.html>
+
+This is free software, and you are free to change and redistribute it
+under certain conditions; type `show_copying' for details. 
+This program comes with ABSOLUTELY NO WARRANTY; for details type `show_warranty'.
+ time 1ns
+ capacitance 1pF
+ resistance 1kohm
+ voltage 1v
+ current 1mA
+ power 1nW
+ distance 1um
+Startpoint: cores[0].core/_09567_
+            (rising edge-triggered flip-flop clocked by clk)
+Endpoint: cores[0].core/_10629_ (rising edge-triggered flip-flop clocked by clk)
+Path Group: clk
+Path Type: max
+
+      Delay        Time   Description
+-----------------------------------------------------------------
+   0.000000    0.000000   clock clk (rise edge)
+   0.000000    0.000000   clock network delay (ideal)
+   0.000000    0.000000 ^ cores[0].core/_09567_/CLK (sky130_fd_sc_hd__dfxtp_1)
+  12.973042   12.973042 ^ cores[0].core/_09567_/Q (sky130_fd_sc_hd__dfxtp_1)
+   9.710176   22.683218 v cores[0].core/_04763_/Y (sky130_fd_sc_hd__clkinv_1)
+   1.266702   23.949921 ^ cores[0].core/_07560_/Y (sky130_fd_sc_hd__o21ai_0)
+   0.309427   24.259348 v cores[0].core/_07561_/Y (sky130_fd_sc_hd__o22ai_1)
+   1.182904   25.442251 v cores[0].core/_07565_/X (sky130_fd_sc_hd__mux4_2)
+   0.307688   25.749939 ^ cores[0].core/_07573_/Y (sky130_fd_sc_hd__o211ai_1)
+   0.323139   26.073078 ^ cores[0].core/_07589_/Y (sky130_fd_sc_hd__nor2b_1)
+   0.185763   26.258841 v cores[0].core/_07591_/Y (sky130_fd_sc_hd__o32ai_1)
+   0.000000   26.258841 v cores[0].core/_10629_/D (sky130_fd_sc_hd__edfxtp_1)
+              26.258841   data arrival time
+
+  10.000000   10.000000   clock clk (rise edge)
+   0.000000   10.000000   clock network delay (ideal)
+   0.000000   10.000000   clock reconvergence pessimism
+              10.000000 ^ cores[0].core/_10629_/CLK (sky130_fd_sc_hd__edfxtp_1)
+  -0.614288    9.385712   library setup time
+               9.385712   data required time
+-----------------------------------------------------------------
+               9.385712   data required time
+             -26.258841   data arrival time
+-----------------------------------------------------------------
+             -16.873129   slack (VIOLATED)
+
+
+worst slack max -16.873129
+EDA_LAB_REPORT_END

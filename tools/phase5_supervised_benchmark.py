@@ -58,7 +58,14 @@ def main() -> None:
                     "elapsed_seconds": round(completed_at - submitted_at, 6),
                     "throughput_runs_per_second": round(args.runs / (completed_at - submitted_at), 6),
                     "submit_latency_seconds": [round(value, 6) for value in submit_latencies],
-                    "terminal": [{"job_id": run["job_id"], "status": run["status"], "trust_status": run["trust_status"]} for run in runs],
+                    "terminal": [{
+                        "job_id": run["job_id"],
+                        "status": run["status"],
+                        "trust_status": run["trust_status"],
+                        "liberty_sha256": run["provenance"].get("liberty_sha256"),
+                        "netlist_sha256": run["provenance"].get("netlist_sha256"),
+                        "script_sha256": run["provenance"].get("script_sha256"),
+                    } for run in runs],
                 }, sort_keys=True))
                 return
             time.sleep(0.25)

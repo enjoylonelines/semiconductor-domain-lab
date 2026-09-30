@@ -70,7 +70,9 @@ SS Heavy child(자식 프로세스) 하나를 1 CPU container(컨테이너)에�
 
 따라서 1.5 GiB는 이 고정 입력과 단일 child profile(자식 프로세스 프로필)의 admission candidate(입장 후보)로만 기록한다. 8 CPU VM에서 8 × 1.5 GiB = 12 GiB라는 예산 산술은 남은 약 7.49 GiB를 시스템 구성요소에 남기지만, 8개의 SS Heavy child가 동시에 안전하거나 더 빠르다는 검증은 아니다. 자세한 raw evidence(원시 근거)는 [SS Heavy memory admission calibration(SS Heavy 메모리 입장 보정)](../evidence/2026-09-30-ss-heavy-memory-admission.md)에 남긴다.
 
-따라서 현재 환경에서는 1/2/4/8 worker matrix(워커 행렬)를 실행하거나 scaling-limit(확장 한계)을 주장하지 않는다.
+2026-09-30에는 이 admission candidate(입장 후보)를 SS Heavy 8개 동시 실행으로 세 번 확인했다. 24/24가 `SUCCEEDED/TRUSTED`, OOM 0/8, PostgreSQL lock wait(잠금 대기) 최대 0으로 종결됐고, Supervisor CPU는 각 1 CPU cap(제한)에 포화됐다. 자세한 raw evidence(원시 근거)는 [SS Heavy eight-concurrency validation(SS Heavy 8개 동시성 검증)](../evidence/2026-09-30-ss-heavy-eight-concurrency.md)에 남긴다.
+
+그러나 1/2/4/8 전체 worker matrix(워커 행렬), sustained arrival(지속 도착), mixed corner(혼합 코너), timeout/cancel under load(부하 중 시간 초과/취소)는 아직 실행하지 않았으므로 scaling-limit(확장 한계)은 주장하지 않는다.
 
 ## STOP
 이번 작업은 workload 재현, 규모/비용 분리, harness 준비까지만 한다. worker scaling과 fault injection은 실행하지 않는다.
