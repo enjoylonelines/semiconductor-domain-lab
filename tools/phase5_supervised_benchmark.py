@@ -22,13 +22,14 @@ def main() -> None:
     parser.add_argument("--runs", type=int, required=True)
     parser.add_argument("--corner", default="tt_025C_1v80")
     parser.add_argument("--timeout-seconds", type=float, default=600)
+    parser.add_argument("--no-migrate", action="store_true", help="connect to a schema that was migrated before runtime startup")
     args = parser.parse_args()
     if not args.dsn:
         raise SystemExit("set EDA_POSTGRES_TEST_DSN or pass --dsn")
     if args.runs < 1:
         raise SystemExit("--runs must be positive")
 
-    store = PostgresStore(args.dsn)
+    store = PostgresStore(args.dsn, migrate=not args.no_migrate)
     service = JobService(
         store,
         max_workers=1,

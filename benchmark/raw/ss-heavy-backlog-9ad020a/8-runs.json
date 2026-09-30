@@ -1,0 +1,32 @@
+{
+  "base_revision": "9ad020a",
+  "stage": "8-runs",
+  "accepted": true,
+  "environment": "same-VM; 8 SS Heavy Supervisors; 1 CPU / 1.5 GiB each; one Host Agent; PostgreSQL 16",
+  "runs": 8,
+  "elapsed_seconds": 12.692759,
+  "throughput_runs_per_second": 0.630281,
+  "submit_latency_seconds": {"p50": 0.001374, "p95": 0.005177, "p99": 0.005177},
+  "execution_request_claim_latency_seconds": {"p50": 0.07412683963775635, "p95": 0.08729243278503418, "p99": 0.08729243278503418},
+  "attempts": {"total": 8, "succeeded": 8, "abandoned": 0, "running": 0, "with_recovery_claim": 0},
+  "terminal_statuses": ["SUCCEEDED"],
+  "trust_statuses": ["TRUSTED"],
+  "max_run_queued": 0,
+  "max_execution_requests_queued": 0,
+  "max_execution_requests_active": 8,
+  "max_lock_waits": 0,
+  "max_connections": 11,
+  "max_expired_running_attempt_leases": 0,
+  "max_unavailable_execution_requests": 0,
+  "sampled_max_supervisor_cpu_percent_of_one_cpu_cap": 112.53,
+  "provenance": {
+    "liberty_sha256": ["9b24f0db3967ac67b4cae1f74bb480fd47922d18d0ed577e3c121739b412c361"],
+    "netlist_sha256": ["b3f09a42b23a9ff84c0084d4d284a9f8f5830b4c50f4972d68f59a18ea0938ce"],
+    "script_sha256": ["cad5237c39e914222b23d6f30a86c6c34d5782bad5480dc7c8714607fb2688a1"]
+  },
+  "notes": [
+    "Schema migration was executed once before runtime startup.",
+    "Host Agent, Supervisors, and submit benchmark connected with automatic migration disabled.",
+    "This is the corrected 8-Run baseline after rejecting the earlier observer connection-count bug."
+  ]
+}

@@ -4,6 +4,19 @@ import sys
 from .api import create_server, service_from_environment
 
 
+def postgres_auto_migrate() -> bool:
+    return os.environ.get("EDA_POSTGRES_AUTO_MIGRATE", "1") not in {"0", "false", "False"}
+
+
+def run_migrate() -> None:
+    from .postgres_store import PostgresStore
+    dsn = os.environ.get("EDA_POSTGRES_DSN")
+    if not dsn:
+        raise SystemExit("migrate requires EDA_POSTGRES_DSN")
+    store = PostgresStore(dsn, migrate=True)
+    store.close()
+
+
 def run_worker() -> None:
     dsn = os.environ.get("EDA_POSTGRES_DSN")
     sta_path = os.environ.get("EDA_OPENSTA_PATH")
@@ -16,7 +29,7 @@ def run_worker() -> None:
     from .service import JobService
     from .worker import PostgresWorker
     from .host_agent import HostAgent
-    store = PostgresStore(dsn)
+    store = PostgresStore(dsn, migrate=postgres_auto_migrate())
     service = JobService(
         store, max_workers=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")),
         resource_slots=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")), max_in_flight=int(os.environ.get("EDA_MAX_IN_FLIGHT", "8")),
@@ -59,7 +72,7 @@ def run_supervisor() -> None:
     required = ("EDA_POSTGRES_DSN", "EDA_HOST_ID", "EDA_OPENSTA_PATH", "EDA_OPENSTA_LIBERTY_PATH", "EDA_OPENSTA_FIXTURE_DIR")
     if not all(os.environ.get(name) for name in required):
         raise SystemExit("supervisor requires PostgreSQL, host identity, and OpenSTA paths")
-    store = PostgresStore(os.environ["EDA_POSTGRES_DSN"])
+    store = PostgresStore(os.environ["EDA_POSTGRES_DSN"], migrate=postgres_auto_migrate())
     supervisor = ExecutionSupervisor(
         store,
         OpenStaSubprocessAdapter(
@@ -84,6 +97,9 @@ def run_supervisor() -> None:
         store.close()
 
 if __name__ == "__main__":
+    if sys.argv[1:] == ["migrate"]:
+        run_migrate()
+        raise SystemExit(0)
     if sys.argv[1:] == ["worker"]:
         run_worker()
         raise SystemExit(0)

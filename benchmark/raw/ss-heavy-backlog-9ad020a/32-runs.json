@@ -1,0 +1,29 @@
+{
+  "base_revision": "9ad020a",
+  "stage": "32-runs",
+  "accepted": true,
+  "environment": "same-VM; 8 SS Heavy Supervisors; 1 CPU / 1.5 GiB each; one Host Agent; PostgreSQL 16",
+  "runs": 32,
+  "elapsed_seconds": 46.43273,
+  "throughput_runs_per_second": 0.689169,
+  "submit_latency_seconds": {"p50": 0.001105, "p95": 0.001763, "p99": 0.004748},
+  "execution_request_created_to_claimed_seconds": {"p50": 0.07661449909210205, "p95": 11.277867078781128, "p99": 11.40422534942627},
+  "attempts": {"total": 32, "succeeded": 32, "abandoned": 0, "running": 0, "with_recovery_claim": 0},
+  "terminal_statuses": ["SUCCEEDED"],
+  "trust_statuses": ["TRUSTED"],
+  "max_run_queued": 23,
+  "max_execution_requests_queued": 3,
+  "max_execution_requests_active": 8,
+  "min_execution_requests_active_while_run_queue_positive": 8,
+  "max_lock_waits": 0,
+  "max_connections": 11,
+  "max_expired_running_attempt_leases": 0,
+  "max_unavailable_execution_requests": 0,
+  "sampled_max_supervisor_cpu_percent_of_one_cpu_cap": 100.88,
+  "provenance": {
+    "liberty_sha256": ["9b24f0db3967ac67b4cae1f74bb480fd47922d18d0ed577e3c121739b412c361"],
+    "netlist_sha256": ["b3f09a42b23a9ff84c0084d4d284a9f8f5830b4c50f4972d68f59a18ea0938ce"],
+    "script_sha256": ["cad5237c39e914222b23d6f30a86c6c34d5782bad5480dc7c8714607fb2688a1"]
+  },
+  "interpretation_note": "created_to_claimed is delivery queue wait when all fixed Supervisors are occupied; it is not PostgreSQL SQL execution latency. Because all 8 execution requests stayed active while Run backlog existed, this measurement is classified as execution-capacity saturation rather than coordination starvation."
+}

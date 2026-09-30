@@ -1,0 +1,40 @@
+{
+  "base_revision": "9ad020a",
+  "stage": "128-runs",
+  "accepted": true,
+  "environment": "same-VM; 8 SS Heavy Supervisors; 1 CPU / 1.5 GiB each; one Host Agent; PostgreSQL 16",
+  "runs": 128,
+  "first_execution_request_to_last_witness_seconds": 189.426209,
+  "approx_throughput_over_execution_window_runs_per_second": 0.675726,
+  "execution_request_created_to_claimed_seconds": {
+    "p50": 0.093636,
+    "p95": 11.172018,
+    "p99": 11.893898
+  },
+  "final": {
+    "run_statuses": {"SUCCEEDED": 128},
+    "execution_request_statuses": {"COMPLETED": 128},
+    "abandoned_attempts": 0,
+    "attempts_with_recovery_claim": 0,
+    "lock_waits": 0,
+    "connections_after_completion": 10
+  },
+  "live_snapshots": [
+    {"epoch": 1790756579, "runs": {"queued": 38, "running": 10, "succeeded": 80, "failed": 0}, "execution_requests": {"queued": 2, "claimed": 0, "running": 8, "completed": 80, "unavailable": 0}, "lock_waits": 0, "connections": 11, "expired_running_attempt_leases": 0},
+    {"epoch": 1790756581, "runs": {"queued": 31, "running": 10, "succeeded": 87, "failed": 0}, "execution_requests": {"queued": 2, "claimed": 0, "running": 8, "completed": 87, "unavailable": 0}, "lock_waits": 0, "connections": 11, "expired_running_attempt_leases": 0},
+    {"epoch": 1790756583, "runs": {"queued": 31, "running": 9, "succeeded": 88, "failed": 0}, "execution_requests": {"queued": 1, "claimed": 0, "running": 8, "completed": 88, "unavailable": 0}, "lock_waits": 0, "connections": 11, "expired_running_attempt_leases": 0},
+    {"epoch": 1790756586, "runs": {"queued": 31, "running": 9, "succeeded": 88, "failed": 0}, "execution_requests": {"queued": 1, "claimed": 0, "running": 8, "completed": 88, "unavailable": 0}, "lock_waits": 0, "connections": 11, "expired_running_attempt_leases": 0},
+    {"epoch": 1790756588, "runs": {"queued": 31, "running": 9, "succeeded": 88, "failed": 0}, "execution_requests": {"queued": 1, "claimed": 0, "running": 8, "completed": 88, "unavailable": 0}, "lock_waits": 0, "connections": 11, "expired_running_attempt_leases": 0}
+  ],
+  "provenance": {
+    "liberty_sha256": "9b24f0db3967ac67b4cae1f74bb480fd47922d18d0ed577e3c121739b412c361",
+    "netlist_sha256": "b3f09a42b23a9ff84c0084d4d284a9f8f5830b4c50f4972d68f59a18ea0938ce",
+    "script_sha256": "cad5237c39e914222b23d6f30a86c6c34d5782bad5480dc7c8714607fb2688a1"
+  },
+  "limitations": [
+    "The observer stdout containing per-submit latency was not preserved because an outer command replay collided with the still-running submitter.",
+    "The live snapshots were captured late in the run, so observed queued=38 is not claimed as the stage maximum.",
+    "created_to_claimed measures delivery queue residence while Supervisors are busy; it is not SQL execution latency."
+  ],
+  "rejected_followup": "A second 128-Run repeat was rejected because duplicate benchmark invocation created separate prefixes (128 and 41 Runs), contaminating the arrival condition."
+}

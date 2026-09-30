@@ -16,14 +16,15 @@ from .store import InFlightBudgetExhausted
 class PostgresStore:
     """A Store-compatible central database; schema creation is non-destructive."""
 
-    def __init__(self, dsn: str, now=None):
+    def __init__(self, dsn: str, now=None, *, migrate: bool = True):
         # Read methods must not leave idle transactions open. State mutations below
         # use explicit transactions so their atomicity remains visible in the code.
         self.connection = psycopg.connect(dsn, row_factory=dict_row, autocommit=True)
         self._lock = threading.RLock()
         self._now = now or time.time
         self._closed = False
-        self._migrate()
+        if migrate:
+            self._migrate()
 
     def _migrate(self) -> None:
         with self.connection.transaction(), self.connection.cursor() as c:
