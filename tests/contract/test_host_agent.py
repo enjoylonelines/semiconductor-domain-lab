@@ -89,6 +89,29 @@ class HostAgentContractTests(unittest.TestCase):
         self.assertEqual(request["host_id"], "host-a")
         self.assertEqual(self.store.get_run(spec.job_id)["status"], "RUNNING")
 
+    def test_live_host_agent_refreshes_only_queued_delivery_attempt_leases(self):
+        job_id = "queued-delivery-lease"
+        self.store.create_run(job_id, "d", "ip", "timing")
+        self.store.update_run(job_id, status="RUNNING")
+        self.store.record_attempt(job_id, 1, "RUNNING")
+        self.assertTrue(self.store.acquire_attempt_lease(job_id, 1, "worker-a", "token", 10))
+        service = self.service("worker-a")
+        agent = HostAgent(self.store, service, host_id="host-a", host_epoch="boot-a", session_id="session-a")
+        agent.start()
+        self.assertTrue(self.store.record_attempt_execution(
+            job_id, 1, "token", **agent.owner.as_dict(), execution_id="execution-a",
+        ))
+        self.assertTrue(self.store.enqueue_execution_request("execution-a", job_id, 1, "host-a", {}))
+
+        self.clock[0] = 109.0
+        self.assertTrue(agent.heartbeat())
+        self.assertEqual(self.store.get_run(job_id)["attempts"][-1]["lease_expires_at"], 119.0)
+
+        self.assertIsNotNone(self.store.claim_execution_request("host-a", "supervisor-a"))
+        self.clock[0] = 118.0
+        self.assertTrue(agent.heartbeat())
+        self.assertEqual(self.store.get_run(job_id)["attempts"][-1]["lease_expires_at"], 119.0)
+
     def test_only_one_supervisor_claims_a_host_request(self):
         self.store.enqueue_execution_request("execution-a", "job-a", 1, "host-a", {"fixture": "normal"})
         first = self.store.claim_execution_request("host-a", "supervisor-a")

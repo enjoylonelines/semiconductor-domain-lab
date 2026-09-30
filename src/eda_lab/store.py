@@ -307,6 +307,22 @@ class Store:
             self.connection.commit()
             return cursor.rowcount == 1
 
+    def heartbeat_queued_execution_attempts(self, session_id: str, ttl_seconds: float) -> int:
+        """Refresh only queued deliveries until a Supervisor owns their heartbeat."""
+        now = self._now()
+        with self._lock:
+            cursor = self.connection.execute(
+                """UPDATE attempts SET heartbeat_at = ?, lease_expires_at = ?, updated_at = ?
+                   WHERE status = 'RUNNING' AND execution_host_session = ?
+                     AND EXISTS (SELECT 1 FROM execution_requests e
+                                 WHERE e.execution_id = attempts.execution_id AND e.status = 'QUEUED')
+                     AND EXISTS (SELECT 1 FROM host_sessions s JOIN hosts h ON h.current_session_id = s.session_id
+                                 WHERE s.session_id = ? AND s.lease_expires_at >= ?)""",
+                (now, now + ttl_seconds, now, session_id, session_id, now),
+            )
+            self.connection.commit()
+            return cursor.rowcount
+
     def record_attempt_execution(self, job_id: str, attempt_no: int, token: str, *, host_id: str,
                                  host_epoch: str, session_id: str, execution_id: str) -> bool:
         with self._lock:

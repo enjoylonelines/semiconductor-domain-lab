@@ -147,6 +147,16 @@ class PostgresStore:
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:
             c.execute("UPDATE eda_host_sessions SET heartbeat_at=%s,lease_expires_at=%s WHERE session_id=%s AND EXISTS (SELECT 1 FROM eda_hosts WHERE current_session_id=eda_host_sessions.session_id)", (now,now+ttl_seconds,session_id)); return c.rowcount==1
 
+    def heartbeat_queued_execution_attempts(self, session_id, ttl_seconds):
+        """Refresh only queued deliveries until a Supervisor has claimed them."""
+        now = self.now()
+        with self._lock, self.connection.transaction(), self.connection.cursor() as c:
+            c.execute("""UPDATE eda_attempts a SET heartbeat_at=%s,lease_expires_at=%s,updated_at=%s
+                         WHERE a.status='RUNNING' AND a.execution_host_session=%s
+                           AND EXISTS (SELECT 1 FROM eda_execution_requests e WHERE e.execution_id=a.execution_id AND e.status='QUEUED')
+                           AND EXISTS (SELECT 1 FROM eda_host_sessions s JOIN eda_hosts h ON h.current_session_id=s.session_id WHERE s.session_id=%s AND s.lease_expires_at >= %s)""", (now,now+ttl_seconds,now,session_id,session_id,now))
+            return c.rowcount
+
     def record_attempt_execution(self, job_id, attempt_no, token, *, host_id, host_epoch, session_id, execution_id):
         now = self.now()
         with self._lock, self.connection.transaction(), self.connection.cursor() as c:

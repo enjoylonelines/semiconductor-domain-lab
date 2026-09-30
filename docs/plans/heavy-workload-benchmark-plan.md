@@ -72,7 +72,9 @@ SS Heavy child(자식 프로세스) 하나를 1 CPU container(컨테이너)에�
 
 2026-09-30에는 이 admission candidate(입장 후보)를 SS Heavy 8개 동시 실행으로 세 번 확인했다. 24/24가 `SUCCEEDED/TRUSTED`, OOM 0/8, PostgreSQL lock wait(잠금 대기) 최대 0으로 종결됐고, Supervisor CPU는 각 1 CPU cap(제한)에 포화됐다. 자세한 raw evidence(원시 근거)는 [SS Heavy eight-concurrency validation(SS Heavy 8개 동시성 검증)](../evidence/2026-09-30-ss-heavy-eight-concurrency.md)에 남긴다.
 
-그러나 1/2/4/8 전체 worker matrix(워커 행렬), sustained arrival(지속 도착), mixed corner(혼합 코너), timeout/cancel under load(부하 중 시간 초과/취소)는 아직 실행하지 않았으므로 scaling-limit(확장 한계)은 주장하지 않는다.
+SS Heavy 1/2/4/8 fixed-batch matrix(고정 배치 행렬)는 리스 결함 수정 후 닫았다. 1→8에서 median makespan(중앙값 완료 시간)은 75.513초에서 12.743초로 줄었고, 모든 accepted Run(승인된 작업)이 `SUCCEEDED/TRUSTED`였다. 자세한 root cause(근본 원인), 폐기 측정, raw evidence(원시 근거)는 [SS Heavy scaling and queued-lease closure(SS Heavy 확장과 대기 리스 종결)](../evidence/2026-09-30-ss-heavy-scaling-and-queued-lease-fix.md)에 남긴다.
+
+그러나 sustained arrival(지속 도착), mixed corner(혼합 코너), timeout/cancel under load(부하 중 시간 초과/취소)는 아직 실행하지 않았으므로 production scaling-limit(운영 확장 한계)은 주장하지 않는다.
 
 ## STOP
 이번 작업은 workload 재현, 규모/비용 분리, harness 준비까지만 한다. worker scaling과 fault injection은 실행하지 않는다.

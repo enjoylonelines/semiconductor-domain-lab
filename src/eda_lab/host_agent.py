@@ -47,7 +47,12 @@ class HostAgent:
     def heartbeat(self) -> bool:
         if not self.started:
             self.start()
-        return self.store.heartbeat_host_session(self.owner.session_id, self.service.lease_seconds)
+        if not self.store.heartbeat_host_session(self.owner.session_id, self.service.lease_seconds):
+            return False
+        refresh_pending = getattr(self.store, "heartbeat_queued_execution_attempts", None)
+        if callable(refresh_pending):
+            refresh_pending(self.owner.session_id, self.service.lease_seconds)
+        return True
 
     def drain(self, **kwargs) -> list[str]:
         if not self.heartbeat():
