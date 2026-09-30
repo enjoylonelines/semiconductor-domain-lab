@@ -88,9 +88,12 @@ def db_snapshot(store: PostgresStore) -> dict:
         }
 
 
-def one_run(dsn: str, worker_count: int, job_count: int) -> dict:
+def one_run(dsn: str, worker_count: int, job_count: int, *, queued_index: bool = True) -> dict:
     prefix = f"pg-limit-{worker_count}-{job_count}-{uuid4().hex}"
     bootstrap = PostgresStore(dsn, migrate=True)
+    if not queued_index:
+        with bootstrap.connection.cursor() as cursor:
+            cursor.execute("DROP INDEX IF EXISTS idx_eda_runs_queued_updated_at")
     bootstrap.close()
 
     store = PostgresStore(dsn, migrate=False)
@@ -181,6 +184,7 @@ def one_run(dsn: str, worker_count: int, job_count: int) -> dict:
         return {
             "worker_count": worker_count,
             "job_count": job_count,
+            "queued_index": queued_index,
             "elapsed_seconds": elapsed,
             "throughput_runs_per_second": job_count / elapsed,
             "submit_latency_seconds": {
@@ -213,11 +217,12 @@ def main() -> None:
     parser.add_argument("--workers", type=int, required=True)
     parser.add_argument("--jobs", type=int, required=True)
     parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--index-mode", choices=("baseline", "indexed"), default="indexed")
     args = parser.parse_args()
     if not args.dsn:
         raise SystemExit("set EDA_POSTGRES_TEST_DSN or pass --dsn")
     samples = [
-        one_run(args.dsn, args.workers, args.jobs)
+        one_run(args.dsn, args.workers, args.jobs, queued_index=args.index_mode == "indexed")
         for _ in range(args.repeats)
     ]
     print(json.dumps({

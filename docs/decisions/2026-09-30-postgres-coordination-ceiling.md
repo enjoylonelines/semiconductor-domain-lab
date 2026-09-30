@@ -61,6 +61,18 @@ Logical multi-host correctness is supported by current tests and prior fault-inj
 
 Physical multi-host throughput remains unverified because the current Docker VM has only eight CPUs. Running sixteen CPU-bound Supervisors inside that same VM would oversubscribe one physical compute budget rather than prove horizontal scaling.
 
+## Stabilized improvement measurement
+
+A follow-up five-repeat A/B measurement on fresh databases was recorded in `../evidence/2026-09-30-postgres-claim-index-stabilized.md`.
+
+At the same 32-worker / 1024-job synthetic coordination condition, median results changed as follows after the queue-order partial index:
+
+- throughput: 191.9 → 216.5 Runs/s (**+12.8%**)
+- claim p50: 2.95 → 2.00 ms (**-32.0%**)
+- claim p95: 95.1 → 89.2 ms (**-6.1%**)
+
+This strengthens the claim that the index produced a measurable improvement while preserving the earlier conclusion that it did not remove the higher-concurrency coordination ceiling.
+
 ## Next trigger
 
 Reopen the delivery architecture decision when one of the following occurs:

@@ -1,0 +1,41 @@
+{
+  "date": "2026-09-30",
+  "base_revision": "69ad647",
+  "scope": "PostgreSQL coordination-only synthetic benchmark; not EDA throughput",
+  "environment": {
+    "postgres": "16-alpine",
+    "postgres_cpu": 0.5,
+    "postgres_memory": "384 MiB",
+    "workers": 32,
+    "jobs_per_repeat": 1024,
+    "fresh_database_per_repeat": true,
+    "repeats_per_condition": 5
+  },
+  "baseline_without_index": [
+    {"repeat":1,"throughput_runs_per_second":204.35393553460926,"claim_p50_seconds":0.0029455129988491535,"claim_p95_seconds":0.09775793299922952,"claim_p99_seconds":0.1681144980029785,"max_lock_waits":10},
+    {"repeat":2,"throughput_runs_per_second":214.91930387424205,"claim_p50_seconds":0.0025713810027809814,"claim_p95_seconds":0.09157051300280727,"claim_p99_seconds":0.09589939999568742,"max_lock_waits":10},
+    {"repeat":3,"throughput_runs_per_second":189.50694648222228,"claim_p50_seconds":0.003046032004931476,"claim_p95_seconds":0.09229009200498695,"claim_p99_seconds":0.18054734900215408,"max_lock_waits":11},
+    {"repeat":4,"throughput_runs_per_second":169.2171771177528,"claim_p50_seconds":0.0034723949938779697,"claim_p95_seconds":0.09507153400045354,"claim_p99_seconds":0.10402428499946836,"max_lock_waits":8},
+    {"repeat":5,"throughput_runs_per_second":191.9201226530303,"claim_p50_seconds":0.0028294509975239635,"claim_p95_seconds":0.09634949400060577,"claim_p99_seconds":0.16722908100200584,"max_lock_waits":10}
+  ],
+  "indexed": [
+    {"repeat":1,"throughput_runs_per_second":216.49686243371198,"claim_p50_seconds":0.00224615799379535,"claim_p95_seconds":0.08920658299757633,"claim_p99_seconds":0.09258762399986153,"max_lock_waits":6},
+    {"repeat":2,"throughput_runs_per_second":207.12498030656832,"claim_p50_seconds":0.0019222619957872666,"claim_p95_seconds":0.08924035599920899,"claim_p99_seconds":0.10818832699442282,"max_lock_waits":10},
+    {"repeat":3,"throughput_runs_per_second":242.517336412752,"claim_p50_seconds":0.0019822819958790205,"claim_p95_seconds":0.0765058670003782,"claim_p99_seconds":0.11397964399657212,"max_lock_waits":6},
+    {"repeat":4,"throughput_runs_per_second":211.06206786262055,"claim_p50_seconds":0.002097329997923225,"claim_p95_seconds":0.09264295599859906,"claim_p99_seconds":0.162322285999835,"max_lock_waits":21},
+    {"repeat":5,"throughput_runs_per_second":234.07760075796347,"claim_p50_seconds":0.0020021029995405115,"claim_p95_seconds":0.09163652900315356,"claim_p99_seconds":0.167671502000303,"max_lock_waits":5}
+  ],
+  "median_comparison": {
+    "throughput_runs_per_second": {"baseline":191.9201226530303,"indexed":216.49686243371198,"change_percent":12.805712835601735},
+    "claim_p50_seconds": {"baseline":0.0029455129988491535,"indexed":0.0020021029995405115,"reduction_percent":32.028716209273},
+    "claim_p95_seconds": {"baseline":0.09507153400045354,"indexed":0.08924035599920899,"reduction_percent":6.133463672960967},
+    "claim_p99_seconds": {"baseline":0.16722908100200584,"indexed":0.11397964399657212,"reduction_percent":31.842211107286428},
+    "max_lock_waits": {"baseline":10,"indexed":6,"reduction_percent":40.0}
+  },
+  "notes": [
+    "All 10 runs completed 1024/1024 jobs successfully.",
+    "Throughput has visible run-to-run variance; report medians, not best samples.",
+    "Lock-wait maxima include an indexed outlier of 21; do not use lock-wait reduction as the primary resume claim.",
+    "The earlier EXPLAIN ANALYZE single-query observation remains 0.726 ms -> 0.273 ms (~62.4% reduction), but it is a single captured plan and must be labeled as such."
+  ]
+}
