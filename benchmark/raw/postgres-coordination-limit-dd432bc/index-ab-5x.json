@@ -1,0 +1,119 @@
+{
+  "setup": {
+    "workers": 32,
+    "jobs": 1024,
+    "repeats_per_condition": 5,
+    "fresh_database_per_repeat": true,
+    "postgres_cpu": 0.5,
+    "postgres_memory": "384 MiB",
+    "adapter": "SyntheticTimingAdapter",
+    "note": "coordination-only benchmark; not EDA throughput"
+  },
+  "baseline": [
+    {
+      "repeat": 1,
+      "throughput": 180.1809081069213,
+      "claim_p50_ms": 2.94492399552837,
+      "claim_p95_ms": 95.54874799505342,
+      "claim_p99_ms": 180.0231969973538,
+      "lock_waits": 14
+    },
+    {
+      "repeat": 2,
+      "throughput": 187.1183216001736,
+      "claim_p50_ms": 3.1722330022603273,
+      "claim_p95_ms": 96.86878299544333,
+      "claim_p99_ms": 104.69464299967512,
+      "lock_waits": 13
+    },
+    {
+      "repeat": 3,
+      "throughput": 214.46969021896354,
+      "claim_p50_ms": 2.693798000109382,
+      "claim_p95_ms": 87.14535999752115,
+      "claim_p99_ms": 127.90676100121345,
+      "lock_waits": 10
+    },
+    {
+      "repeat": 4,
+      "throughput": 213.55588036143385,
+      "claim_p50_ms": 2.754724002443254,
+      "claim_p95_ms": 90.77497399994172,
+      "claim_p99_ms": 97.36820399848511,
+      "lock_waits": 14
+    },
+    {
+      "repeat": 5,
+      "throughput": 189.67666765173905,
+      "claim_p50_ms": 2.88107600499643,
+      "claim_p95_ms": 95.31694200268248,
+      "claim_p99_ms": 141.69281299837166,
+      "lock_waits": 12
+    }
+  ],
+  "indexed": [
+    {
+      "repeat": 1,
+      "throughput": 236.49389431976076,
+      "claim_p50_ms": 2.0825210012844764,
+      "claim_p95_ms": 88.91564200166613,
+      "claim_p99_ms": 100.68926699750591,
+      "lock_waits": 7
+    },
+    {
+      "repeat": 2,
+      "throughput": 234.29651318843256,
+      "claim_p50_ms": 2.10151300416328,
+      "claim_p95_ms": 74.9167120011407,
+      "claim_p99_ms": 165.31157999997959,
+      "lock_waits": 6
+    },
+    {
+      "repeat": 3,
+      "throughput": 258.75383419142605,
+      "claim_p50_ms": 1.963501999853179,
+      "claim_p95_ms": 72.3151610000059,
+      "claim_p99_ms": 98.79846600233577,
+      "lock_waits": 9
+    },
+    {
+      "repeat": 4,
+      "throughput": 208.99101183059608,
+      "claim_p50_ms": 2.212781000707764,
+      "claim_p95_ms": 85.05382699513575,
+      "claim_p99_ms": 148.88893799798097,
+      "lock_waits": 5
+    },
+    {
+      "repeat": 5,
+      "throughput": 209.86272231094867,
+      "claim_p50_ms": 2.58606700663222,
+      "claim_p95_ms": 93.52896799828159,
+      "claim_p99_ms": 249.2396470042877,
+      "lock_waits": 3
+    }
+  ],
+  "medians": {
+    "baseline": {
+      "throughput": 189.67666765173905,
+      "claim_p50_ms": 2.88107600499643,
+      "claim_p95_ms": 95.31694200268248,
+      "claim_p99_ms": 127.90676100121345,
+      "lock_waits": 13
+    },
+    "indexed": {
+      "throughput": 234.29651318843256,
+      "claim_p50_ms": 2.10151300416328,
+      "claim_p95_ms": 85.05382699513575,
+      "claim_p99_ms": 148.88893799798097,
+      "lock_waits": 6
+    }
+  },
+  "median_change_percent": {
+    "throughput": 23.524161452803973,
+    "claim_p50": -27.058050515891058,
+    "claim_p95": -10.767356560030953,
+    "claim_p99": 16.4042751395827,
+    "lock_waits": -53.84615384615385
+  }
+}

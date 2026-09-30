@@ -322,6 +322,36 @@ Current same-VM SS Heavy capacity is still bounded by the eight physical CPU exe
 3. EXPLAIN ANALYZE showed the queued-Run claim path performing a sequential scan and sort, so I added a partial queue-order index and re-ran the identical workload.
 4. The index removed the avoidable scan/sort and reduced observed lock pressure, but the higher-concurrency ceiling remained; because real SS Heavy throughput was still hundreds of times below this DB ceiling, PostgreSQL remained the appropriate coordination layer and Kafka stayed gated.
 
+
+## 14.1 Five-repeat index A/B validation
+
+To produce a more stable portfolio-grade improvement number, the same 32-worker / 1024-Run coordination-only condition was repeated five times per condition, using a fresh database for every repeat.
+
+This comparison is still a PostgreSQL coordination microbenchmark, not OpenSTA/EDA throughput.
+
+### Median across five fresh-database repeats
+
+| metric | without queue index | with queue index | median change |
+| --- | ---: | ---: | ---: |
+| throughput | 189.7 Runs/s | 234.3 Runs/s | **+23.5%** |
+| claim p50 | 2.88 ms | 2.10 ms | **-27.1%** |
+| claim p95 | 95.3 ms | 85.1 ms | **-10.8%** |
+| claim p99 | 127.9 ms | 148.9 ms | **+16.4% worse** |
+| observed lock-wait sessions | 13 | 6 | **-53.8%** |
+
+All ten runs completed 1024/1024 Runs successfully with no worker execution errors.
+
+The repeated A/B therefore supports these bounded claims:
+
+- the partial queue-order index improved median coordination throughput by about **23.5%** under this 32-claimer synthetic stress;
+- median claim latency improved by **27.1% at p50** and **10.8% at p95**;
+- observed lock-wait pressure fell by about **53.8%** at the median;
+- **p99 did not improve** and was worse in the indexed sample, so the experiment does not support a tail-latency improvement claim.
+
+This is more defensible than using the single captured EXPLAIN execution-time change as the primary portfolio result. The EXPLAIN result remains useful as the causal explanation: the index removed the queued-row sequential scan and explicit sort. The five-repeat A/B is the preferred improvement number because it measures the concurrent system behavior under identical load.
+
+Raw data: `benchmark/raw/postgres-coordination-limit-dd432bc/index-ab-5x.json`.
+
 ## 15. Stop condition
 
 The cycle stops here because the requested DB coordination bottleneck was reproduced, one reasonable PostgreSQL repair was applied, and the same failing stage was remeasured.

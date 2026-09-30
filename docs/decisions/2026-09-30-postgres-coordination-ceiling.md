@@ -41,6 +41,8 @@ However, repeating the same 32-worker / 1024-Run stress after the index produced
 
 The index corrected a real query inefficiency and reduced lock pressure, but did not remove the higher-concurrency coordination ceiling.
 
+A follow-up five-repeat A/B at the same 32-worker / 1024-Run condition, with a fresh database per repeat, produced these median changes: throughput **+23.5%** (189.7→234.3 Runs/s), claim p50 **-27.1%** (2.88→2.10 ms), claim p95 **-10.8%** (95.3→85.1 ms), and observed lock waits **-53.8%** (13→6). Claim p99 worsened **16.4%** (127.9→148.9 ms), so no tail-latency improvement is claimed. These repeated A/B medians are the preferred portfolio improvement metrics; the single EXPLAIN timing remains causal supporting evidence rather than the headline system-performance number.
+
 ## Architecture interpretation
 
 This synthetic DB ceiling is not the current EDA bottleneck.
