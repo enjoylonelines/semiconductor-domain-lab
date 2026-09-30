@@ -128,13 +128,27 @@ class HostAgentContractTests(unittest.TestCase):
         self.store.start_host_session("host-a", "boot-a", "session-a", 10)
         self.store.record_attempt_execution(spec.job_id, 1, "token", host_id="host-a", host_epoch="boot-a", session_id="session-a", execution_id="execution-a")
         self.store.enqueue_execution_request("execution-a", spec.job_id, 1, "host-a", {"spec": JobService.spec_payload(spec), "lease_token": "token", "execution_owner": {"host_id": "host-a", "host_epoch": "boot-a", "session_id": "session-a"}})
-        supervisor = ExecutionSupervisor(self.store, SyntheticTimingAdapter(), host_id="host-a", supervisor_id="supervisor-a")
+        events = []
+        publisher = type(
+            "Recorder",
+            (),
+            {"publish": lambda _self, job_id, status, **fields: events.append((job_id, status, fields)) or True},
+        )()
+        supervisor = ExecutionSupervisor(
+            self.store,
+            SyntheticTimingAdapter(),
+            host_id="host-a",
+            supervisor_id="supervisor-a",
+            progress_publisher=publisher,
+        )
         self.assertEqual(supervisor.run_once(), "execution-a")
         witness = self.store.connection.execute("SELECT kind,process_exit_code FROM execution_witnesses WHERE execution_id='execution-a'").fetchone()
         self.assertEqual((witness["kind"], witness["process_exit_code"]), ("PROCESS_EXITED", 0))
         self.assertEqual(self.store.get_run(spec.job_id)["status"], "SUCCEEDED")
         request = self.store.connection.execute("SELECT status FROM execution_requests WHERE execution_id='execution-a'").fetchone()
         self.assertEqual(request["status"], "COMPLETED")
+        self.assertEqual(events[0][0:2], (spec.job_id, "SUCCEEDED"))
+        self.assertEqual(events[0][2]["host_id"], "host-a")
 
     def test_foreign_runtime_termination_witness_allows_safe_failure_closure(self):
         job_id = "remote-terminated"

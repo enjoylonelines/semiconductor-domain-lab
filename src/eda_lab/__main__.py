@@ -8,6 +8,17 @@ def postgres_auto_migrate() -> bool:
     return os.environ.get("EDA_POSTGRES_AUTO_MIGRATE", "1") not in {"0", "false", "False"}
 
 
+def progress_publisher_from_environment():
+    redis_url = os.environ.get("EDA_REDIS_URL")
+    if not redis_url:
+        return None
+    from .progress import RedisProgressPublisher
+    return RedisProgressPublisher.from_url(
+        redis_url,
+        channel=os.environ.get("EDA_REDIS_PROGRESS_CHANNEL", "eda:run-progress"),
+    )
+
+
 def run_migrate() -> None:
     from .postgres_store import PostgresStore
     dsn = os.environ.get("EDA_POSTGRES_DSN")
@@ -34,6 +45,7 @@ def run_worker() -> None:
         store, max_workers=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")),
         resource_slots=int(os.environ.get("EDA_WORKER_CONCURRENCY", "4")), max_in_flight=int(os.environ.get("EDA_MAX_IN_FLIGHT", "8")),
         worker_id=os.environ.get("EDA_WORKER_ID", "worker"), execution_mode=os.environ.get("EDA_EXECUTION_MODE", "external"),
+        progress_publisher=progress_publisher_from_environment(),
         adapter=OpenStaSubprocessAdapter(
             sta_path=sta_path,
             liberty_path=liberty_path,
@@ -87,6 +99,7 @@ def run_supervisor() -> None:
         ),
         host_id=os.environ["EDA_HOST_ID"], supervisor_id=os.environ.get("EDA_SUPERVISOR_ID", os.environ["EDA_HOST_ID"]),
         lease_seconds=float(os.environ.get("EDA_EXECUTION_LEASE_SECONDS", "30")),
+        progress_publisher=progress_publisher_from_environment(),
     )
     stop = Event()
     try:

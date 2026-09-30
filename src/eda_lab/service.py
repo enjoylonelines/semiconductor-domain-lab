@@ -27,7 +27,7 @@ class IdempotencyConflict(RuntimeError):
 
 
 class JobService:
-    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False, backpressure_retry_after_seconds: float = 1.0, execution_mode: str = "local", recovery_lease_seconds: float = 30, orphan_grace_seconds: float = 60):
+    def __init__(self, store: Store | None = None, max_workers: int = 4, max_attempts: int = 2, retry_delay_seconds: float = 0.01, adapter=None, resource_slots: int | None = None, worker_id: str = "local-worker", lease_seconds: float = 30, max_in_flight: int | None = None, enable_new_violation_index: bool = False, backpressure_retry_after_seconds: float = 1.0, execution_mode: str = "local", recovery_lease_seconds: float = 30, orphan_grace_seconds: float = 60, progress_publisher=None):
         self.store = store or Store()
         self.adapter = adapter or SyntheticTimingAdapter()
         self.max_attempts = max_attempts
@@ -52,6 +52,7 @@ class JobService:
         self.futures = {}
         self._process_context = local()
         self.execution_owner: dict[str, str] | None = None
+        self.progress_publisher = progress_publisher
         add_observer = getattr(self.adapter, "add_process_observer", None)
         if callable(add_observer):
             add_observer(self._record_adapter_process)
@@ -60,6 +61,14 @@ class JobService:
         """Finish submitted local work, then release the Store connection."""
         self.executor.shutdown(wait=True)
         self.store.close()
+
+    def _publish_progress(self, job_id: str, status: str, **fields) -> bool:
+        if self.progress_publisher is None:
+            return False
+        try:
+            return bool(self.progress_publisher.publish(job_id, status, **fields))
+        except Exception:
+            return False
 
     def set_execution_owner(self, owner: dict[str, str]) -> None:
         required = {"host_id", "host_epoch", "session_id"}
@@ -223,9 +232,11 @@ class JobService:
             execution_owner=self.execution_owner, **fields
         ):
             raise RuntimeError("attempt and run terminal write lost its lease fence")
+        self._publish_progress(job_id, run_status, attempt_no=attempt_no)
 
     def _execute(self, spec: JobSpec) -> None:
         self.store.update_run(spec.job_id, status="RUNNING")
+        self._publish_progress(spec.job_id, "RUNNING")
         for attempt_no in range(1, self.max_attempts + 1):
             acquired = False
             lease_token = None

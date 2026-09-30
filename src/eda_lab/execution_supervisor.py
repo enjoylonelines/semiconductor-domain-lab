@@ -12,12 +12,21 @@ from .service import JobService
 class ExecutionSupervisor:
     """Claims one host request and persists a termination witness after adapter return."""
 
-    def __init__(self, store, adapter, *, host_id: str, supervisor_id: str, lease_seconds: float = 30):
+    def __init__(self, store, adapter, *, host_id: str, supervisor_id: str, lease_seconds: float = 30, progress_publisher=None):
         self.store = store
         self.adapter = adapter
         self.host_id = host_id
         self.supervisor_id = supervisor_id
         self.lease_seconds = lease_seconds
+        self.progress_publisher = progress_publisher
+
+    def _publish_progress(self, job_id: str, status: str, **fields) -> bool:
+        if self.progress_publisher is None:
+            return False
+        try:
+            return bool(self.progress_publisher.publish(job_id, status, **fields))
+        except Exception:
+            return False
 
     def _heartbeat_loop(self, stop: Event, request: dict) -> None:
         """Keep the accepted execution owner alive while this Supervisor owns its child."""
@@ -81,6 +90,13 @@ class ExecutionSupervisor:
                 )
             if not ok:
                 raise RuntimeError("supervisor finalization lost its lease fence")
+            self._publish_progress(
+                request["job_id"],
+                "SUCCEEDED" if parsed.parse_status == "OK" and parsed.semantic_status == "VALID" and result.process_exit_code == 0 else "FAILED",
+                attempt_no=request["attempt_no"],
+                host_id=self.host_id,
+                supervisor_id=self.supervisor_id,
+            )
             return request["execution_id"]
         finally:
             heartbeat_stop.set()

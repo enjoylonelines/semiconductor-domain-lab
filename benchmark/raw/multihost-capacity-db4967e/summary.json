@@ -1,0 +1,120 @@
+{
+  "revision_base": "db4967e",
+  "environment": {
+    "docker_vm_cpu_budget": 8,
+    "postgres_cpu": 0.5,
+    "postgres_memory": "384 MiB",
+    "supervisor_cpu": 1,
+    "supervisor_memory": "1536 MiB",
+    "workload": "SS Heavy PicoRV32 x64",
+    "scope": "same Docker VM; logical Host identities; not physical multi-host"
+  },
+  "one_host_four_supervisors_16_runs": [
+    {
+      "repeat": 1,
+      "elapsed_seconds": 40.25623349100351,
+      "throughput_runs_per_second": 0.39745397451492054,
+      "host_counts": {
+        "mh-cap-host-a": 16
+      }
+    },
+    {
+      "repeat": 2,
+      "elapsed_seconds": 40.41751158099942,
+      "throughput_runs_per_second": 0.3958680130006253,
+      "host_counts": {
+        "mh-cap-host-a": 16
+      }
+    },
+    {
+      "repeat": 3,
+      "elapsed_seconds": 40.58795701100462,
+      "throughput_runs_per_second": 0.3942056013231195,
+      "host_counts": {
+        "mh-cap-host-a": 16
+      }
+    }
+  ],
+  "two_hosts_four_supervisors_each_16_runs": [
+    {
+      "repeat": 1,
+      "elapsed_seconds": 32.210471411999606,
+      "throughput_runs_per_second": 0.49673287283958845,
+      "host_counts": {
+        "mh-cap-host-b1": 9,
+        "mh-cap-host-b2": 7
+      }
+    },
+    {
+      "repeat": 2,
+      "elapsed_seconds": 23.56982918799622,
+      "throughput_runs_per_second": 0.6788339394563188,
+      "host_counts": {
+        "mh-cap-host-b1": 8,
+        "mh-cap-host-b2": 8
+      }
+    },
+    {
+      "repeat": 3,
+      "elapsed_seconds": 33.78945454899804,
+      "throughput_runs_per_second": 0.4735205173791256,
+      "host_counts": {
+        "mh-cap-host-b1": 6,
+        "mh-cap-host-b2": 10
+      }
+    }
+  ],
+  "two_hosts_four_supervisors_each_32_runs": [
+    {
+      "repeat": 1,
+      "elapsed_seconds": 55.055939619996934,
+      "throughput_runs_per_second": 0.5812270251106066,
+      "host_counts": {
+        "mh-cap-host-b1": 15,
+        "mh-cap-host-b2": 17
+      }
+    },
+    {
+      "repeat": 2,
+      "elapsed_seconds": 45.25599258700095,
+      "throughput_runs_per_second": 0.7070886786646567,
+      "host_counts": {
+        "mh-cap-host-b1": 16,
+        "mh-cap-host-b2": 16
+      }
+    },
+    {
+      "repeat": 3,
+      "elapsed_seconds": 53.35257486299815,
+      "throughput_runs_per_second": 0.5997836108598594,
+      "host_counts": {
+        "mh-cap-host-b1": 18,
+        "mh-cap-host-b2": 14
+      }
+    }
+  ],
+  "medians": {
+    "one_host_4slot_16": {
+      "elapsed_seconds": 40.41751158099942,
+      "throughput_runs_per_second": 0.3958680130006253
+    },
+    "two_host_8slot_16": {
+      "elapsed_seconds": 32.210471411999606,
+      "throughput_runs_per_second": 0.49673287283958845
+    },
+    "throughput_change_percent": 25.479416504107345,
+    "elapsed_change_percent": -20.305654276989195,
+    "balanced_two_host_16_throughput_gain_percent_vs_one_host_median": 71.47986630969511,
+    "two_host_8slot_32_throughput_runs_per_second": 0.5997836108598594
+  },
+  "correctness": {
+    "all_runs_succeeded": true,
+    "all_runs_trusted": true,
+    "expired_live_attempts": 0,
+    "execution_requests_completed": true,
+    "provenance_uniform": true,
+    "liberty_sha256": "9b24f0db3967ac67b4cae1f74bb480fd47922d18d0ed577e3c121739b412c361",
+    "netlist_sha256": "b3f09a42b23a9ff84c0084d4d284a9f8f5830b4c50f4972d68f59a18ea0938ce",
+    "script_sha256": "cad5237c39e914222b23d6f30a86c6c34d5782bad5480dc7c8714607fb2688a1"
+  }
+}
