@@ -1,0 +1,31 @@
+{
+  "scope": "actual SS Heavy OpenSTA; counterfactual immediate retry vs current keep-original policy",
+  "base_revision": "155e459",
+  "environment": {
+    "container_cpu": 2,
+    "container_memory_gib": 4,
+    "repeats_per_mode": 5,
+    "fault_after_seconds": 0.5,
+    "workload": "PicoRV32 x64 SS Heavy"
+  },
+  "fenced_summary": {
+    "primary_cpu_seconds_median": 9.241282,
+    "primary_wall_seconds_median": 9.243033420003485,
+    "remaining_wall_after_fault_seconds_median": 8.741706269000133,
+    "total_child_cpu_seconds_median": 9.241282
+  },
+  "naive_summary": {
+    "duplicate_cpu_seconds_median": 9.387165,
+    "duplicate_wall_seconds_median": 9.411707492996356,
+    "overlap_seconds_median": 9.029352510995523,
+    "primary_cpu_seconds_median": 9.501409,
+    "primary_wall_seconds_median": 9.533498222001072,
+    "total_child_cpu_seconds_median": 18.822470000000003
+  },
+  "derived": {
+    "additional_total_child_cpu_seconds_per_fault_median": 9.581188,
+    "total_child_cpu_reduction_percent": 50.903,
+    "duplicate_cpu_seconds_per_fault_median": 9.387165,
+    "duplicate_overlap_seconds_per_fault_median": 9.029352510995523
+  }
+}
