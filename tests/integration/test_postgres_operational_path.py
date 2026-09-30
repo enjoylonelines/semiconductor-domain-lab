@@ -46,6 +46,14 @@ class PostgresOperationalPathTests(unittest.TestCase):
     def spec(self, suffix):
         return JobSpec(f"{self.prefix}-{suffix}", "d", "ip", "timing", "TT", 0.1, "ns")
 
+    def test_queued_claim_index_exists(self):
+        store = self.store()
+        with store.connection.cursor() as cursor:
+            cursor.execute("SELECT indexdef FROM pg_indexes WHERE schemaname=current_schema() AND indexname='idx_eda_runs_queued_updated_at'")
+            row = cursor.fetchone()
+        self.assertIsNotNone(row)
+        self.assertIn("WHERE (status = 'QUEUED'::text)", row["indexdef"])
+
     def test_api_submit_is_queued_then_a_distinct_worker_claims_and_executes(self):
         api_store = self.store()
         api = self.service(api_store, "api-1")

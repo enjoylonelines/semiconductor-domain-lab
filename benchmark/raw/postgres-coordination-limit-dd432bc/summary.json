@@ -1,0 +1,37 @@
+{
+  "environment": {
+    "postgres": "16-alpine",
+    "postgres_cpu": 0.5,
+    "postgres_memory": "384 MiB",
+    "max_connections": 100,
+    "shared_buffers": "128MB",
+    "execution_adapter": "SyntheticTimingAdapter",
+    "scope": "coordination-only; not EDA throughput"
+  },
+  "baseline": [
+    {"workers": 8, "jobs": 128, "throughput_runs_per_second": 200.81507922593653, "claim_p95_seconds": 0.004872369994700421, "claim_p99_seconds": 0.018107315998349804, "max_lock_waits": 0, "max_connections": 9},
+    {"workers": 16, "jobs": 512, "repeat": 1, "throughput_runs_per_second": 232.99685485455367, "claim_p95_seconds": 0.047524150999379344, "claim_p99_seconds": 0.07293585000297753, "max_lock_waits": 3, "max_connections": 17},
+    {"workers": 16, "jobs": 512, "repeat": 2, "throughput_runs_per_second": 211.06117213653215, "claim_p95_seconds": 0.06512921200192068, "claim_p99_seconds": 0.0755398809997132, "max_lock_waits": 3, "max_connections": 17},
+    {"workers": 16, "jobs": 512, "repeat": 3, "throughput_runs_per_second": 244.08746772022445, "claim_p95_seconds": 0.046646267001051456, "claim_p99_seconds": 0.07189256799756549, "max_lock_waits": 6, "max_connections": 17},
+    {"workers": 32, "jobs": 1024, "repeat": 1, "throughput_runs_per_second": 213.03779656124192, "claim_p95_seconds": 0.09431285599566763, "claim_p99_seconds": 0.12329420900641708, "max_lock_waits": 9, "max_connections": 33},
+    {"workers": 32, "jobs": 1024, "repeat": 2, "throughput_runs_per_second": 207.48320395750937, "claim_p95_seconds": 0.08724699899903499, "claim_p99_seconds": 0.09491884700400988, "max_lock_waits": 7, "max_connections": 34},
+    {"workers": 32, "jobs": 1024, "repeat": 3, "throughput_runs_per_second": 216.98415185619587, "claim_p95_seconds": 0.08865331900597084, "claim_p99_seconds": 0.1619656910042977, "max_lock_waits": 9, "max_connections": 34}
+  ],
+  "explain_before": {
+    "queued_rows": 1024,
+    "plan": "Seq Scan(status=QUEUED) -> Sort(updated_at) -> LockRows -> Limit",
+    "execution_time_ms": 0.726
+  },
+  "postgres_challenger": {
+    "change": "CREATE INDEX idx_eda_runs_queued_updated_at ON eda_runs(updated_at) WHERE status='QUEUED'",
+    "explain_after": {
+      "plan": "Index Scan idx_eda_runs_queued_updated_at -> LockRows -> Limit",
+      "execution_time_ms": 0.273
+    }
+  },
+  "after_index": [
+    {"workers": 32, "jobs": 1024, "repeat": 1, "throughput_runs_per_second": 217.95223095478062, "claim_p95_seconds": 0.0950095189982676, "claim_p99_seconds": 0.13389657499647, "max_lock_waits": 4, "max_connections": 34},
+    {"workers": 32, "jobs": 1024, "repeat": 2, "throughput_runs_per_second": 233.92459305531793, "claim_p95_seconds": 0.07512646799295908, "claim_p99_seconds": 0.13616479699703632, "max_lock_waits": 5, "max_connections": 33},
+    {"workers": 32, "jobs": 1024, "repeat": 3, "throughput_runs_per_second": 207.12603121296593, "claim_p95_seconds": 0.09343723000347381, "claim_p99_seconds": 0.1204491370008327, "max_lock_waits": 7, "max_connections": 34}
+  ]
+}

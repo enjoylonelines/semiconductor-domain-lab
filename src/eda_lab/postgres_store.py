@@ -36,6 +36,8 @@ class PostgresStore:
               provenance_status text NOT NULL DEFAULT 'UNKNOWN', trust_status text NOT NULL DEFAULT 'UNKNOWN',
               provenance jsonb NOT NULL DEFAULT '{}'::jsonb, artifact_path text, error text, spec_hash text,
               spec_payload jsonb, updated_at double precision NOT NULL DEFAULT 0);
+            CREATE INDEX IF NOT EXISTS idx_eda_runs_queued_updated_at
+              ON eda_runs(updated_at) WHERE status='QUEUED';
             CREATE TABLE IF NOT EXISTS eda_metrics (job_id text PRIMARY KEY REFERENCES eda_runs(job_id), payload jsonb NOT NULL);
             CREATE TABLE IF NOT EXISTS eda_attempts (
               job_id text NOT NULL REFERENCES eda_runs(job_id), attempt_no integer NOT NULL, status text NOT NULL,
