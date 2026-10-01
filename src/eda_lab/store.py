@@ -234,6 +234,26 @@ class Store:
             ).fetchall()]
             return result
 
+    def list_runs(self, status: str | None = None, limit: int = 50,
+                  cursor: tuple[float, str] | None = None) -> list[dict[str, Any]]:
+        """Return a stable page ordered by newest stored Run first."""
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        if status:
+            clauses.append("status = ?")
+            parameters.append(status)
+        if cursor is not None:
+            updated_at, job_id = cursor
+            clauses.append("(updated_at < ? OR (updated_at = ? AND job_id < ?))")
+            parameters.extend([updated_at, updated_at, job_id])
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock:
+            rows = self.connection.execute(
+                f"SELECT job_id FROM runs{where} ORDER BY updated_at DESC, job_id DESC LIMIT ?",
+                (*parameters, limit),
+            ).fetchall()
+        return [run for row in rows if (run := self.get_run(row["job_id"])) is not None]
+
     def list_stale_running(self, cutoff: float) -> list[dict[str, Any]]:
         with self._lock:
             job_ids = [row["job_id"] for row in self.connection.execute(

@@ -267,6 +267,23 @@ class PostgresStore:
         with self._lock, self.connection.cursor() as c:
             c.execute("SELECT job_id,attempt_no FROM eda_attempts WHERE status='RUNNING' AND lease_token IS NOT NULL AND lease_expires_at < %s ORDER BY job_id,attempt_no", (self.now() if now is None else now,)); return [(r["job_id"],r["attempt_no"]) for r in c.fetchall()]
 
+    def list_runs(self, status: str | None = None, limit: int = 50,
+                  cursor: tuple[float, str] | None = None) -> list[dict]:
+        clauses: list[str] = []
+        parameters: list[object] = []
+        if status:
+            clauses.append("status = %s")
+            parameters.append(status)
+        if cursor is not None:
+            updated_at, job_id = cursor
+            clauses.append("(updated_at < %s OR (updated_at = %s AND job_id < %s))")
+            parameters.extend([updated_at, updated_at, job_id])
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock, self.connection.cursor() as c:
+            c.execute(f"SELECT job_id FROM eda_runs{where} ORDER BY updated_at DESC, job_id DESC LIMIT %s", (*parameters, limit))
+            ids = [row["job_id"] for row in c.fetchall()]
+        return [run for job_id in ids if (run := self.get_run(job_id)) is not None]
+
     def list_stale_running(self, cutoff):
         with self._lock, self.connection.cursor() as c:
             c.execute("SELECT job_id FROM eda_runs WHERE status='RUNNING' AND updated_at <= %s", (cutoff,)); ids=[r["job_id"] for r in c.fetchall()]
