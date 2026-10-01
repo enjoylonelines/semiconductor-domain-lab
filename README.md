@@ -1,24 +1,168 @@
-# semiconductor-domain-lab
+# EDA Run Orchestration Lab
 
-퀄리타스반도체 SW Engineer 지원을 위한 **반도체/IP/EDA 도메인 학습·검증** 저장소.
+OpenSTA 기반 정적 타이밍 분석(STA)을 **서버 작업으로 안전하게 실행·복구·검증하기 위한 백엔드 실험 프로젝트**입니다.
 
-현재 상태: **2026-09-25 bounded EDA workflow prototype(범위 제한 EDA 작업흐름 프로토타입).** 실제 OpenSTA(정적 타이밍 분석 도구) `setup-max` 고정 fixture(고정 입력), Run/Attempt(작업/실행 시도) lease(임대), timeout/cancel(시간 초과/취소), worker-loss reconciliation(작업자 손실 상태 조정), single-host resource admission(단일 호스트 자원 입장), result trust(결과 신뢰) 분리를 구현·측정했다. 이 근거는 운영 용량이나 회사 내부 시스템 주장이 아니며, 정확한 경계는 [채택 결정](docs/decisions/2026-09-24-eda-deep-dive-adoption.md)과 `docs/evidence/`를 따른다.
+단순히 OpenSTA를 호출하는 데서 끝내지 않고, 장시간 CPU 작업을 여러 개 처리할 때 생기는 **실행 소유권, worker 손실, 중복 실행, PostgreSQL coordination, 결과 신뢰성**을 실제 부하와 장애 주입으로 검증했습니다.
 
-현재 작업은 **고정된 OpenSTA workload(작업부하)의 실행·복구·결과 신뢰 계약을 실제 child process(하위 프로세스)로 검증하고, 확장 조건을 근거와 함께 남기는 것**이다. [첫 번째 딥다이브 계획](docs/plans/2026-09-24-eda-execution-correctness-deep-dive.md), [채택 결정](docs/decisions/2026-09-24-eda-deep-dive-adoption.md), [실제 STA 근거](docs/evidence/2026-09-24-real-sta/README.md)를 따른다.
+> 이 프로젝트는 상용 EDA 시스템을 복제한 것이 아닙니다. 공개 OpenSTA와 고정된 실험 입력을 사용해 백엔드 실행 문제를 제한된 범위에서 검증한 프로젝트입니다.
 
-- [현재 범위 정본 — 재조사·문제 재정의·확장/종료 조건](docs/plans/research-and-scope-2026-09-23.md)
-- [학습 가이드](docs/learning/study-guide.md)
-- [Track A 학습·자기 설명 검증 정본](docs/plans/domain-learning-plan-2026-09-23.md)
-- [AI와 학습자의 역할 분담](docs/plans/ai-human-division.md)
-- [용어 표기 규칙·초기 읽기 표](docs/plans/terminology-plan.md)
-- [회사·현행/과거 JD·기술 자료 출처 장부](docs/references/source-register-2026-09-23.md)
+## 한눈에 보기
 
-Track A는 도메인 학습·synthetic parser이고, Track B는 실제 EDA를 복제하지 않는 workflow platform prototype이다. 2~3일은 Track A 또는 Track B의 최소 vertical slice에만 해당한다.
+| 항목 | 내용 |
+| --- | --- |
+| 문제 | worker가 사라져도 실제 OpenSTA 프로세스는 살아 있을 수 있어, 즉시 재실행 시 같은 분석이 중복될 수 있음 |
+| 핵심 설계 | API와 실행 분리, PostgreSQL 실행 소유권, Supervisor 기반 실행 관리, Redis 진행 알림 |
+| 검증 | 실제 OpenSTA 부하 / 장애 주입 / PostgreSQL coordination microbenchmark |
+| 주요 결과 | worker-loss A/B에서 OpenSTA CPU 사용량 **-50.9%**, 실행 슬롯 4→8에서 처리량 **+25.5%**, DB claim 경로 인덱스 A/B에서 처리량 **+23.5%** |
+| 현재 경계 | 동일 Docker VM의 logical host 검증까지. 물리 멀티호스트·상용 EDA·DB failover는 검증하지 않음 |
 
-Track A는 새 서비스 구축 없이 도메인 이해를 검증한다. 현재 Track B는 단일 synthetic flow의 HTTP API·SQLite·프로세스 내 worker로 실행/파싱/검사 상태와 원문 추적을 검증한다([Stage 1 decision](docs/architecture/stage1-decision.md)).
-웹 UI·추가 DB/broker 인프라·상용 EDA·회로 설계·100명 운영·동적 풀은 범위 밖이다. 단일 공개 도구 output/작은 design 검증은 현재 완료조건에 포함한다. [범위 정본 §0](docs/plans/research-and-scope-2026-09-23.md)의 증거 기반 trigger와 별도 결정 없이 다음 단계를 자동 진행하지 않는다.
+## Architecture
 
-## 후속 작업 경계
-@devspace-max 우선, 기존 workspace 재사용. 계획서는 docs/plans에 유지한다.
-명시적 요청 없이 구현·커밋·푸시하지 않는다.
-출처에 명시된 사실(F), 추론(I), 학습용 단순화(S), 미확인(U)을 분리한다.
+```text
+REST API
+   │
+   ▼
+PostgreSQL
+- Run / Attempt 상태
+- 실행 소유권
+- atomic claim
+- accepted completion
+   │
+   ├─────────────┐
+   ▼             ▼
+Host Agent A   Host Agent B
+   │             │
+   ▼             ▼
+Supervisor     Supervisor
+   └──────┬──────┘
+          ▼
+       OpenSTA
+
+Redis Pub/Sub
+└─ 실시간 진행 알림 전용
+```
+
+PostgreSQL을 최종 작업 상태의 기준으로 두고, Redis는 유실되어도 Run 결과에 영향을 주지 않는 **best-effort 진행 알림**으로 분리했습니다.
+
+## Troubleshooting 1 — worker가 죽어도 분석은 살아 있었습니다
+
+worker 종료를 곧바로 분석 종료로 판단하면, 기존 OpenSTA와 새 OpenSTA가 동시에 실행될 수 있습니다.
+
+같은 SS Heavy 입력에서 다음 두 정책을 각각 5회 비교했습니다.
+
+| 정책 | 총 OpenSTA CPU 중앙값 | 중복 실행 |
+| --- | ---: | --- |
+| worker 종료 직후 즉시 재실행 | **18.82 CPU-s** | 기존 분석과 약 9.03초 겹침 |
+| 기존 실행 소유권 유지 | **9.24 CPU-s** | 새 분석을 시작하지 않음 |
+
+현재 정책은 이 장애 경계에서 총 OpenSTA CPU 사용량을 **50.9% 낮췄고**, 장애 1회당 약 **9.4 CPU-s의 중복 연산**을 피했습니다.
+
+- [실험 근거](docs/evidence/2026-09-30-worker-loss-duplicate-cost.md)
+- [재시도 정책 결정](docs/decisions/2026-09-30-worker-loss-retry-policy.md)
+
+## Troubleshooting 2 — 실행 슬롯을 늘리면 어디가 먼저 병목이 될까?
+
+실제 OpenSTA 부하와 PostgreSQL coordination 부하를 분리해 측정했습니다.
+
+### 실제 SS Heavy 실행
+
+동일 Docker VM에서 실행 슬롯을 4개에서 8개로 늘렸을 때:
+
+- 처리량: **0.396 → 0.497 Runs/s (+25.5%)**
+- 전체 완료시간: **40.42 → 32.21초 (-20.3%)**
+
+현재 환경에서는 OpenSTA CPU 실행 용량이 먼저 한계에 도달했습니다.
+
+### PostgreSQL coordination
+
+OpenSTA 연산을 제거한 별도 microbenchmark에서 32 workers × 1024 Runs를 반복했습니다.
+
+인덱스 적용 후:
+
+- 처리량: **189.7 → 234.3 Runs/s (+23.5%)**
+- claim p50: **2.88 → 2.10 ms**
+- lock wait: **13 → 6**
+- p99은 오히려 악화된 구간이 있어 “모든 latency가 개선됐다”고 표현하지 않습니다.
+
+현재 실제 EDA 처리량은 이 DB coordination 한계보다 훨씬 낮았기 때문에 Kafka를 추가하지 않았습니다.
+
+- [PostgreSQL / multi-host evidence](docs/evidence/2026-09-30-multihost-and-postgres-coordination-limit.md)
+- [PostgreSQL coordination decision](docs/decisions/2026-09-30-postgres-coordination-ceiling.md)
+- [Kafka gate decision](docs/decisions/2026-09-30-postgres-delivery-kafka-gate.md)
+
+## Result trust
+
+프로그램이 종료됐다는 사실과 결과를 사용할 수 있다는 판단을 분리했습니다.
+
+```text
+process exit
+   ↓
+report parse
+   ↓
+analysis type / required fields validation
+   ↓
+timing result interpretation
+   ↓
+accepted result
+```
+
+실행 성공, 타이밍 기준 충족 여부, 리포트 신뢰성을 각각 다른 상태로 다룹니다.
+
+## Tech Stack
+
+- Python 3.11+
+- FastAPI
+- PostgreSQL
+- Redis Pub/Sub
+- Docker
+- OpenSTA
+- pytest
+
+## Repository Guide
+
+```text
+src/eda_lab/        실행·상태 관리 핵심 코드
+tests/              unit / contract / integration 테스트
+benchmark/raw/      원시 benchmark 결과
+docs/evidence/      측정 근거
+docs/decisions/     설계 결정
+docs/plans/         실험 계획과 종료 조건
+```
+
+## Run / Test
+
+의존성은 `pyproject.toml`과 `uv.lock`을 기준으로 관리합니다.
+
+```bash
+uv sync
+uv run pytest
+```
+
+멀티호스트 및 benchmark 실행은 각 compose 파일과 `tools/` 스크립트를 사용합니다.
+
+## Scope & Limits
+
+검증한 것:
+
+- 실제 OpenSTA child process 실행
+- worker-loss 장애 경계
+- 실행 소유권 / fencing / accepted completion
+- 동일 VM logical host 분리
+- PostgreSQL atomic claim과 coordination 한계
+- Redis progress 알림 분리
+
+아직 검증하지 않은 것:
+
+- 물리 서버 간 네트워크 장애
+- PostgreSQL replication / failover
+- 상용 EDA / license server
+- 실제 sign-off MCMM workload
+- autoscaling
+
+실험 수치를 운영 환경 전체의 성능이나 비용 절감 수치로 일반화하지 않습니다.
+
+## Why this project
+
+이 프로젝트에서 가장 중요하게 본 것은 “기술을 많이 넣는 것”이 아니라 **실패를 재현하고, 실제 병목을 측정한 뒤 필요한 제어만 추가하는 것**이었습니다.
+
+PostgreSQL이 실제 OpenSTA 실행을 충분히 공급하고 있는 동안에는 Kafka를 추가하지 않았고, worker가 사라졌다는 이유만으로 살아 있는 분석을 다시 실행하지 않았습니다.
