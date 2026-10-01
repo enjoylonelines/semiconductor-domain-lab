@@ -1,0 +1,66 @@
+{
+  "status": "accepted",
+  "jobs": 8,
+  "prefix": "ss-backlog-8-ac25fd3e925f439aaa8ab529d79c829d-",
+  "makespan_seconds": 12.065374187000998,
+  "submit": {
+    "latency_seconds": {
+      "p50": 0.0012099640007363632,
+      "p95": 0.0032152099993254524,
+      "p99": 0.0032152099993254524,
+      "max": 0.0032152099993254524
+    },
+    "throughput_requests_per_second": 674.9768695107732,
+    "errors": [],
+    "idempotency_conflicts": 0
+  },
+  "coordination": {
+    "delivery_claim_wait_seconds": {
+      "p50": 0.07768464088439941,
+      "p95": 0.08990335464477539,
+      "p99": 0.08990335464477539,
+      "max": 0.08990335464477539
+    },
+    "queue_wait_seconds": {
+      "p50": 0.15786123275756836,
+      "p95": 0.16146016120910645,
+      "p99": 0.16146016120910645,
+      "max": 0.16146016120910645
+    },
+    "connections_max": 11,
+    "lock_waits_max": 0,
+    "deadlock_delta": 0,
+    "xact_rollback_delta": 0
+  },
+  "queue_execution": {
+    "run_queue_depth_max": 8,
+    "delivery_queue_depth_max": 0,
+    "execution_slot_fraction_max": 1,
+    "execution_slot_fraction_mean": 0.8461538461538461,
+    "full_slot_sample_ratio": 0.8461538461538461,
+    "sample_count": 13,
+    "backlog_sample_count": 1,
+    "underfull_with_run_backlog_count": 1
+  },
+  "correctness": {
+    "run_statuses": {
+      "SUCCEEDED": 8
+    },
+    "trust_statuses": {
+      "TRUSTED": 8
+    },
+    "attempt_statuses": {
+      "SUCCEEDED": 8
+    },
+    "delivery_statuses": {
+      "COMPLETED": 8
+    },
+    "duplicate_attempts": [],
+    "duplicate_deliveries": [],
+    "unexpected_supervisors": [],
+    "unexpected_unavailable": [],
+    "lease_or_recovery_failures": [],
+    "nonterminal_runs": [],
+    "provenance_mismatch": []
+  }
+}

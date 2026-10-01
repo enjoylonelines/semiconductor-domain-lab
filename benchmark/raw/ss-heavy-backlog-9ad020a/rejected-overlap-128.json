@@ -1,0 +1,15 @@
+{
+  "status": "rejected",
+  "reason": "two benchmark launch processes overlapped after long tool-call timeout/replay",
+  "batches": [
+    {
+      "prefix": "ss-backlog-128-48974babbb844d82b6901b02dac6642d-",
+      "terminal_runs": 128
+    },
+    {
+      "prefix": "ss-backlog-128-9b03a69634f04e8eb2fe214467a21a30-",
+      "terminal_runs": 40
+    }
+  ],
+  "action": "final 128 launched once as detached process with explicit completion-file polling"
+}

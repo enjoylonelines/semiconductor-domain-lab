@@ -1,0 +1,14 @@
+{
+  "status": "rejected",
+  "reason": "cross-profile worker contamination via shared global eda_runs queue",
+  "prefix": "ss-backlog-32-cfc7ad35a8cd4b4f9b60842c95576cb9-",
+  "observed_terminal_runs": 32,
+  "provenance_mismatch_runs": 11,
+  "contaminating_supervisors": [
+    "phase5-supervisor-1",
+    "phase5-supervisor-5",
+    "phase5-supervisor-7",
+    "phase5-supervisor-8"
+  ],
+  "action": "added allowed-supervisor validation and isolated final measurements from unrelated polling workers"
+}

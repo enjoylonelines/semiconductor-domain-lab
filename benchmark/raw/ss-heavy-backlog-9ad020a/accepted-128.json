@@ -1,0 +1,69 @@
+{
+  "status": "accepted",
+  "jobs": 128,
+  "prefix": "ss-backlog-128-49578192da8b41f68a7874c42cb5170c-",
+  "makespan_seconds": 184.39963516100033,
+  "submit": {
+    "latency_seconds": {
+      "p50": 0.0008830150018184213,
+      "p95": 0.001485808999859728,
+      "p99": 0.0018359069981670473,
+      "max": 0.0028181960005895235
+    },
+    "throughput_requests_per_second": 1015.767351873815,
+    "errors": [],
+    "idempotency_conflicts": 0
+  },
+  "coordination": {
+    "delivery_claim_wait_seconds": {
+      "p50": 0.08921098709106445,
+      "p95": 11.1155366897583,
+      "p99": 11.738060474395752,
+      "max": 11.76713514328003
+    },
+    "queue_wait_seconds": {
+      "p50": 84.42352092266083,
+      "p95": 170.06777358055115,
+      "p99": 170.76218008995056,
+      "max": 170.7631015777588
+    },
+    "connections_max": 11,
+    "lock_waits_max": 0,
+    "lock_wait_sample_count": 0,
+    "lock_wait_with_run_backlog_count": 0,
+    "deadlock_delta": 0,
+    "xact_rollback_delta": 0,
+    "db_xact_per_second_proxy": 72.74417863293581
+  },
+  "queue_execution": {
+    "run_queue_depth_max": 120,
+    "delivery_queue_depth_max": 8,
+    "execution_slot_fraction_max": 1,
+    "execution_slot_fraction_mean": 0.9650537634408602,
+    "full_slot_sample_ratio": 0.9354838709677419,
+    "sample_count": 93,
+    "backlog_sample_count": 86,
+    "underfull_with_run_backlog_count": 4
+  },
+  "correctness": {
+    "run_statuses": {
+      "SUCCEEDED": 128
+    },
+    "trust_statuses": {
+      "TRUSTED": 128
+    },
+    "attempt_statuses": {
+      "SUCCEEDED": 128
+    },
+    "delivery_statuses": {
+      "COMPLETED": 128
+    },
+    "duplicate_attempts": [],
+    "duplicate_deliveries": [],
+    "unexpected_supervisors": [],
+    "unexpected_unavailable": [],
+    "lease_or_recovery_failures": [],
+    "nonterminal_runs": [],
+    "provenance_mismatch": []
+  }
+}

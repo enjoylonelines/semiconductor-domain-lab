@@ -1,0 +1,62 @@
+{
+  "git_revision": "9ad020ac5cf454a411307aca13f73e9b84c6c2a2",
+  "image_revision": "sha256:f0c9dd04b8355d18701e35bd2c0c8c96eee4e2f4b3285daf95977742fd6c999d",
+  "docker_vm": {
+    "cpus": 8,
+    "memory_bytes": 20926898176
+  },
+  "postgres": {
+    "image": "postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea",
+    "cpus": 0.5,
+    "memory_bytes": 402653184
+  },
+  "host_agent": {
+    "cpus": 0.6,
+    "memory_bytes": 134217728,
+    "max_in_flight": 8,
+    "worker_concurrency": 8,
+    "poll_seconds": 0.1
+  },
+  "supervisors": {
+    "count": 8,
+    "cpus_each": 1,
+    "memory_bytes_each": 1610612736
+  },
+  "workload": {
+    "corner": "ss_100C_1v60",
+    "liberty_sha256": "9b24f0db3967ac67b4cae1f74bb480fd47922d18d0ed577e3c121739b412c361",
+    "netlist_sha256": "b3f09a42b23a9ff84c0084d4d284a9f8f5830b4c50f4972d68f59a18ea0938ce",
+    "script_sha256": "cad5237c39e914222b23d6f30a86c6c34d5782bad5480dc7c8714607fb2688a1"
+  },
+  "post_128_memory_peaks_bytes": {
+    "ss-backlog-supervisor-1": 1309282304,
+    "ss-backlog-supervisor-2": 1305452544,
+    "ss-backlog-supervisor-3": 1301274624,
+    "ss-backlog-supervisor-4": 1304236032,
+    "ss-backlog-supervisor-5": 1307361280,
+    "ss-backlog-supervisor-6": 1299120128,
+    "ss-backlog-supervisor-7": 1305636864,
+    "ss-backlog-supervisor-8": 1308225536
+  },
+  "supervisor_oom_killed": false,
+  "resource_samples": [
+    {
+      "phase": "128-run ~24s",
+      "postgres_cpu_percent": 1.49,
+      "postgres_memory": "51.74MiB / 384MiB",
+      "host_agent_cpu_percent": 1.27,
+      "host_agent_memory": "45.05MiB / 128MiB",
+      "supervisor_cpu_percent_range": "98.04-100.24",
+      "supervisor_memory_approx": "944.6MiB / 1.5GiB"
+    },
+    {
+      "phase": "128-run ~2m30s",
+      "postgres_cpu_percent": 1.24,
+      "postgres_memory": "53.39MiB / 384MiB",
+      "host_agent_cpu_percent": 0.83,
+      "host_agent_memory": "45.45MiB / 128MiB",
+      "supervisor_cpu_percent_range": "98.45-100.27",
+      "supervisor_memory_approx": "944.7-944.8MiB / 1.5GiB"
+    }
+  ]
+}
